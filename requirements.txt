@@ -1,0 +1,15 @@
+# Core
+torch>=2.0
+torchvision>=0.15
+timm>=0.9
+torchmetrics>=1.0
+
+# Image / CV
+opencv-python>=4.8
+
+# SR / signal processing
+einops>=0.7
+PyWavelets>=1.5
+
+# GPU array (CUDA-specific, see note below)
+# cupy
