@@ -24,7 +24,7 @@ class BasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
         use_adapter=False,
-        use_pruner=False,
+        pruning_keep_ratio=1,
     ):
         super().__init__()
         self.dim = dim
@@ -46,15 +46,21 @@ class BasicLayer(nn.Module):
             ]
         )
         self.downsample = downsample
-        if use_adapter:
-            self.adapters = nn.ModuleList(
+        self.adapters = (
+            nn.ModuleList(
                 [
                     MLPAdapter(dim, hidden_ratio=1, snr_adaptive=True)
                     for _ in range(depth)
                 ]
             )
-        else:
-            self.adapters = None
+            if use_adapter is True
+            else None
+        )
+        self.token_pruner = (
+            SwinTokenPrunerCNN(dim, keep_ratio=pruning_keep_ratio, hidden_dim=dim)
+            if pruning_keep_ratio < 1
+            else None
+        )
 
     def forward(self, x, H, W, snr):
         """
@@ -67,10 +73,9 @@ class BasicLayer(nn.Module):
         """
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
-            if self.adapters is not None:
-                x = self.adapters[i](x, snr=snr)
-        if self.downsample is not None:
-            x, H, W = self.downsample(x, H, W)
+            x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
+        x = self.token_pruner(x, H, W) if self.token_pruner is not None else x
+        x, H, W = self.downsample(x, H, W) if self.downsample is not None else x
         return x, H, W
 
 
