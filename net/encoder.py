@@ -5,7 +5,7 @@ from .modules import (
     MLPAdapter,
     PatchEmbed,
     PatchMerging,
-    AdaptiveModulator,
+    SwinTokenPrunerCNN,
 )
 from timm.layers import trunc_normal_
 
@@ -24,6 +24,7 @@ class BasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
         use_adapter=False,
+        use_pruner=False,
     ):
         super().__init__()
         self.dim = dim
@@ -45,12 +46,6 @@ class BasicLayer(nn.Module):
             ]
         )
         self.downsample = downsample
-        if self.downsample is not None:
-            self.downsample = downsample(
-                dim=dim,
-                out_dim=out_dim,
-                norm_layer=norm_layer,
-            )
         if use_adapter:
             self.adapters = nn.ModuleList(
                 [
@@ -111,13 +106,24 @@ class SwinJSCC_Encoder(nn.Module):
         # Encoder stages
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
+            layer_dim = embed_dims[i_layer]
+            layer_out_dim = (
+                embed_dims[i_layer + 1]
+                if i_layer < self.num_layers - 1
+                else embed_dims[-1]
+            )
+            layer_downsample = (
+                PatchMerging(
+                    dim=layer_dim,
+                    out_dim=layer_out_dim,
+                    norm_layer=norm_layer,
+                )
+                if i_layer < self.num_layers - 1
+                else None
+            )
             layer = BasicLayer(
-                dim=embed_dims[i_layer],
-                out_dim=(
-                    embed_dims[i_layer + 1]
-                    if i_layer < self.num_layers - 1
-                    else embed_dims[-1]
-                ),
+                dim=layer_dim,
+                out_dim=layer_out_dim,
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -125,7 +131,7 @@ class SwinJSCC_Encoder(nn.Module):
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
-                downsample=(PatchMerging if i_layer < self.num_layers - 1 else None),
+                downsample=layer_downsample,
                 use_adapter=use_adapter,
             )
             self.layers.append(layer)
