@@ -7,7 +7,7 @@ from net.network import SwinJSCC
 from data.datasets import get_loader
 from configs.config import Config
 from tools.test import test
-from tools.train import train_attractors_one_epoch, train_one_epoch
+from tools.train import train_one_epoch
 from utils.ddp_utils import cleanup_ddp, initialize_ddp
 from utils.logger_utils import logger_configuration
 from utils.parser_utils import create_parser
@@ -121,28 +121,16 @@ if __name__ == "__main__":
                 train_sampler.set_epoch(epoch)
             if test_sampler is not None:
                 test_sampler.set_epoch(epoch)
-            if config.attractor:
-                global_step = train_attractors_one_epoch(
-                    epoch,
-                    global_step,
-                    net,
-                    train_loader,
-                    optimizer,
-                    logger,
-                    config,
-                    scaler,
-                )
-            else:
-                global_step = train_one_epoch(
-                    epoch,
-                    global_step,
-                    net,
-                    train_loader,
-                    optimizer,
-                    logger,
-                    config,
-                    scaler,
-                )
+            global_step = train_one_epoch(
+                epoch,
+                global_step,
+                net,
+                train_loader,
+                optimizer,
+                logger,
+                config,
+                scaler,
+            )
             # Save/check only on rank 0
             if (epoch + 1) % config.save_model_freq == 0:
                 if ddp_env["rank"] == 0:
@@ -170,5 +158,4 @@ if __name__ == "__main__":
             config,
         )
     # DDP CLEANUP
-    # if ddp_env["world_size"] > 1:
     cleanup_ddp()

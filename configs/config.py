@@ -12,7 +12,7 @@ class Config:
         self.channel_type = args.channel_type  # "awgn" or "rayleigh"
         self.model = args.model
         self.multiple_snr = [float(x) for x in args.multiple_snr.split(",")]
-        self.channel_number = [int(x) for x in args.C.split(",")]
+        self.keep_ratios = [float(x) for x in args.keep_ratios.split(",")]
         self.CUDA = torch.cuda.is_available()
         self.device = torch.device("cuda:0" if self.CUDA else "cpu")
         self.amp = args.amp
@@ -40,15 +40,12 @@ class Config:
         self.training = args.training
         self.normalize = False
         self.learning_rate = 1e-4
-        # self.alpha_losses = [1, 1, 1, 1]
-        self.alpha_losses = [1, 1, 1, 1 / (255.0**2)]
         self.tot_epoch = 10_000_000
         self.distortion_metric = args.distortion_metric  # "MSE" or "MS-SSIM"
 
         # modules enabling
         self.encoder_adapter = args.encoder_adapter
         self.decoder_adapter = args.decoder_adapter
-        self.attractor = args.attractor
         self.sr = args.sr
 
         # Dataset & architecture setup
@@ -136,6 +133,7 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.encoder_adapter,
+            use_token_pruner=args.token_pruning,
         )
 
         self.decoder_kwargs = dict(
@@ -189,6 +187,7 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.encoder_adapter,
+            use_token_pruner=args.token_pruning,
         )
         self.decoder_kwargs = dict(
             patch_size=self.patch_size,

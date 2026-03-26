@@ -1,0 +1,40 @@
+{
+    "version": "0.3.0",
+    "configurations": [
+        {
+            "name": "Debug AdaptiveJSCC (torchrun, single GPU)",
+            "type": "debugpy",
+            "request": "launch",
+            // Instead of calling the script directly, run the torch.distributed launcher
+            "module": "torch.distributed.run",
+            "args": [
+                "--nproc_per_node=1",
+                "main.py",
+                "--trainset", "DIV2K",
+                "--testset", "Kodak",
+                "--distortion-metric", "MSE",
+                "--model", "SwinJSCC_w/_RA",
+                "--channel-type", "awgn",
+                "--keep-ratios", "0.0417, 0.0833, 0.125, 0.1667, 0.25",
+                "--multiple-snr", "1,4,7,10,13",
+                "--model-size", "base",
+                "--img-size", "256",
+                "--amp",
+                // "--training",
+                // "--attractor",
+                // "--sr",
+                
+            ],
+
+            // Ensure the process sees the GPU
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+
+            "console": "integratedTerminal",
+
+            // Optional: ensures you can use breakpoints reliably
+            "justMyCode": false
+        }
+    ]
+}

@@ -8,6 +8,28 @@ from .modules import (
     SwinTokenPrunerCNN,
 )
 from timm.layers import trunc_normal_
+import math
+
+
+def generate_layers_keep_ratios(num_stages, target_ratio, mode="exp"):
+    """
+    Returns list of keep ratios from stage 0 → stage L-1
+    """
+    if num_stages == 1:
+        return [target_ratio]
+    ratios = []
+    for i in range(num_stages):
+        t = i / (num_stages - 1)
+        if mode == "exp":
+            r = target_ratio**t
+        elif mode == "linear":
+            r = 1.0 - t * (1.0 - target_ratio)
+        elif mode == "cosine":
+            r = target_ratio + (1 - target_ratio) * (0.5 * (1 + math.cos(math.pi * t)))
+        else:
+            raise ValueError("Unknown mode")
+        ratios.append(r)
+    return ratios
 
 
 class BasicLayer(nn.Module):
@@ -24,7 +46,7 @@ class BasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
         use_adapter=False,
-        pruning_keep_ratio=1,
+        use_token_pruner=False,
     ):
         super().__init__()
         self.dim = dim
@@ -57,12 +79,10 @@ class BasicLayer(nn.Module):
             else None
         )
         self.token_pruner = (
-            SwinTokenPrunerCNN(dim, keep_ratio=pruning_keep_ratio, hidden_dim=dim)
-            if pruning_keep_ratio < 1
-            else None
+            SwinTokenPrunerCNN(dim, dim, True) if use_token_pruner is True else None
         )
 
-    def forward(self, x, H, W, snr):
+    def forward(self, x, H, W, snr, rate):
         """
         Args:
             x: (B, H*W, C)
@@ -71,12 +91,17 @@ class BasicLayer(nn.Module):
             x: transformed features
             H, W: updated resolution
         """
+        mask = None
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
             x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
-        x = self.token_pruner(x, H, W) if self.token_pruner is not None else x
-        x, H, W = self.downsample(x, H, W) if self.downsample is not None else x
-        return x, H, W
+        x, mask = (
+            self.token_pruner(x, H, W, rate)
+            if self.token_pruner is not None
+            else (x, mask)
+        )
+        x, H, W = self.downsample(x, H, W) if self.downsample is not None else (x, H, W)
+        return x, mask, H, W
 
 
 class SwinJSCC_Encoder(nn.Module):
@@ -94,6 +119,7 @@ class SwinJSCC_Encoder(nn.Module):
         norm_layer=nn.LayerNorm,
         patch_norm=True,
         use_adapter=False,
+        use_token_pruner=False,
     ):
         super().__init__()
         self.num_layers = len(depths)
@@ -138,23 +164,22 @@ class SwinJSCC_Encoder(nn.Module):
                 norm_layer=norm_layer,
                 downsample=layer_downsample,
                 use_adapter=use_adapter,
+                use_token_pruner=use_token_pruner,
             )
             self.layers.append(layer)
         self.norm = norm_layer(embed_dims[-1])
-        ### JSCC Modulation, WAIT TO BE DESIGNED
-        self.adaptive_modulatior = AdaptiveModulator("")
-        self.sigmoid = nn.Sigmoid()
         self.apply(self._init_weights)
 
-    def forward(self, x, snr, rate):
+    def forward(self, x, snr, target_rate):
         B, C, H, W = x.shape
+        layer_keep_ratios = generate_layers_keep_ratios(len(self.layers), target_rate)
         # Patch embedding
         x, H, W = self.patch_embed(x)
         # Backbone
-        for layer in self.layers:
-            x, H, W = layer(x, H, W, snr)
+        for i, layer in enumerate(self.layers):
+            rate = layer_keep_ratios[i]
+            x, mask, H, W = layer(x, H, W, snr, rate)
         x = self.norm(x)
-        x, mask = self.adaptive_modulatior(x, snr, rate)
         return x, mask, H, W
 
     def _init_weights(self, m):

@@ -51,7 +51,9 @@ def create_parser():
         choices=["awgn", "rayleigh"],
         help="wireless channel model, awgn or rayleigh",
     )
-    parser.add_argument("--C", type=str, default="96", help="bottleneck dimension")
+    parser.add_argument(
+        "--keep-ratios", type=str, default="0.125", help="bottleneck dimension"
+    )
     parser.add_argument(
         "--multiple-snr", type=str, default="10", help="random or fixed snr"
     )
@@ -62,12 +64,14 @@ def create_parser():
         choices=["small", "base", "large", "baseline"],
         help="SwinJSCC model size",
     )
-    parser.add_argument("--attractor", action="store_true", help="add attractor module")
     parser.add_argument(
         "--encoder-adapter", action="store_true", help="add encoder_adapter module"
     )
     parser.add_argument(
         "--decoder-adapter", action="store_true", help="add decoder_adapter module"
+    )
+    parser.add_argument(
+        "--token-pruning", action="store_true", help="add token pruning module"
     )
     parser.add_argument("--sr", action="store_true", help="add sr module")
     parser.add_argument(

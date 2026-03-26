@@ -4,7 +4,6 @@ from .modules import (
     MLPAdapter,
     PatchUnembed,
     PatchReverseMerging,
-    AdaptiveModulator,
 )
 from timm.layers import trunc_normal_
 
@@ -27,7 +26,6 @@ class BasicLayer(nn.Module):
         super().__init__()
         self.dim = dim
         self.depth = depth
-        # Swin blocks (resolution-agnostic)
         self.blocks = nn.ModuleList(
             [
                 SwinTransformerBlock(
@@ -44,20 +42,17 @@ class BasicLayer(nn.Module):
             ]
         )
         # Upsampling layer
-        self.upsample = (
-            upsample(dim=dim, out_dim=out_dim, norm_layer=norm_layer)
-            if upsample is not None
-            else None
-        )
-        if use_adapter:
-            self.adapters = nn.ModuleList(
+        self.upsample = upsample
+        self.adapters = (
+            nn.ModuleList(
                 [
                     MLPAdapter(dim, hidden_ratio=1, snr_adaptive=True)
                     for _ in range(depth)
                 ]
             )
-        else:
-            self.adapters = None
+            if use_adapter is True
+            else None
+        )
 
     def forward(self, x, H, W, snr):
         """
@@ -71,11 +66,8 @@ class BasicLayer(nn.Module):
         # Swin blocks (resolution unchanged)
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
-            if self.adapters is not None:
-                x = self.adapters[i](x, snr=snr)
-        # Upsample (resolution doubles)
-        if self.upsample is not None:
-            x, H, W = self.upsample(x, H, W)
+            x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
+        x, H, W = self.upsample(x, H, W) if self.upsample is not None else (x, H, W)
         return x, H, W
 
 
@@ -109,13 +101,24 @@ class SwinJSCC_Decoder(nn.Module):
         # Build decoder layers (low → high resolution)
         self.layers = nn.ModuleList()
         for i_layer in range(self.num_layers):
+            layer_dim = embed_dims[i_layer]
+            layer_out_dim = (
+                embed_dims[i_layer + 1]
+                if i_layer < self.num_layers - 1
+                else embed_dims[-1]
+            )
+            layer_upsample = (
+                PatchReverseMerging(
+                    dim=layer_dim,
+                    out_dim=layer_out_dim,
+                    norm_layer=norm_layer,
+                )
+                if i_layer < self.num_layers - 1
+                else None
+            )
             layer = BasicLayer(
-                dim=embed_dims[i_layer],
-                out_dim=(
-                    embed_dims[i_layer + 1]
-                    if i_layer < self.num_layers - 1
-                    else embed_dims[-1]
-                ),
+                dim=layer_dim,
+                out_dim=layer_out_dim,
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -123,15 +126,10 @@ class SwinJSCC_Decoder(nn.Module):
                 qkv_bias=qkv_bias,
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
-                upsample=(
-                    PatchReverseMerging if i_layer < self.num_layers - 1 else None
-                ),
+                upsample=layer_upsample,
                 use_adapter=use_adapter,
             )
             self.layers.append(layer)
-        ### SNR modulation (decoder side) WAIT TO BE DESIGNED
-        self.adaptive_modulatior = AdaptiveModulator("")
-        self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
         self.apply(self._init_weights)
 

@@ -1,3 +1,3 @@
 conda activate jscc
 cd projects/DenoiseSwinJSCC
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5  torchrun --rdzv_endpoint=127.0.0.1:29501  --nproc_per_node=6 main.py --trainset DIV2K --testset Kodak --distortion-metric MSE --model SwinJSCC_w/_RA --channel-type awgn --C 32,64,96,128,192 --multiple-snr 1,4,7,10,13 --model_size base --training
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5  torchrun --rdzv_endpoint=127.0.0.1:29501  --nproc_per_node=6 main.py --trainset DIV2K --testset Kodak --distortion-metric MSE --model SwinJSCC_w/_RA --channel-type awgn --keep-ratios 0.0417, 0.0833, 0.125, 0.1667, 0.25 --multiple-snr 1,4,7,10,13 --model_size base --training
