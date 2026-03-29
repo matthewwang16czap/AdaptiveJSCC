@@ -59,10 +59,7 @@ class SwinJSCC(nn.Module):
             # has proven 8 bit quantization doesn't affect result a lot
             feature, scale = quantize_symmetric(feature, bits=self.config.quant_bits)
         cbr = (
-            rate
-            * feature.numel()
-            * (self.config.quant_bits / 8)
-            / input_image[0].numel()
+            rate * feature.numel() * (self.config.quant_bits / 8) / input_image.numel()
         )
         with torch.autocast(device_type=input_image.device.type, enabled=False):
             avg_pwr = (

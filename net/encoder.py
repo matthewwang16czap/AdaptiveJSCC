@@ -46,7 +46,6 @@ class BasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         downsample=None,
         use_adapter=False,
-        use_token_pruner=False,
     ):
         super().__init__()
         self.dim = dim
@@ -68,6 +67,7 @@ class BasicLayer(nn.Module):
             ]
         )
         self.downsample = downsample
+        self.token_pruner = SwinTokenPrunerCNN(dim, dim, True)
         self.adapters = (
             nn.ModuleList(
                 [
@@ -77,9 +77,6 @@ class BasicLayer(nn.Module):
             )
             if use_adapter is True
             else None
-        )
-        self.token_pruner = (
-            SwinTokenPrunerCNN(dim, dim, True) if use_token_pruner is True else None
         )
 
     def forward(self, x, H, W, snr, rate):
@@ -95,11 +92,7 @@ class BasicLayer(nn.Module):
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
             x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
-        x, mask = (
-            self.token_pruner(x, H, W, rate)
-            if self.token_pruner is not None
-            else (x, mask)
-        )
+        x, mask = self.token_pruner(x, H, W, rate)
         x, H, W = self.downsample(x, H, W) if self.downsample is not None else (x, H, W)
         return x, mask, H, W
 
@@ -119,7 +112,6 @@ class SwinJSCC_Encoder(nn.Module):
         norm_layer=nn.LayerNorm,
         patch_norm=True,
         use_adapter=False,
-        use_token_pruner=False,
     ):
         super().__init__()
         self.num_layers = len(depths)
@@ -164,7 +156,6 @@ class SwinJSCC_Encoder(nn.Module):
                 norm_layer=norm_layer,
                 downsample=layer_downsample,
                 use_adapter=use_adapter,
-                use_token_pruner=use_token_pruner,
             )
             self.layers.append(layer)
         self.norm = norm_layer(embed_dims[-1])

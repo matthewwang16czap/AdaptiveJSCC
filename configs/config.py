@@ -133,7 +133,6 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.encoder_adapter,
-            use_token_pruner=args.token_pruning,
         )
 
         self.decoder_kwargs = dict(
@@ -187,7 +186,6 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.encoder_adapter,
-            use_token_pruner=args.token_pruning,
         )
         self.decoder_kwargs = dict(
             patch_size=self.patch_size,

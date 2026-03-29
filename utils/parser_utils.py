@@ -70,9 +70,6 @@ def create_parser():
     parser.add_argument(
         "--decoder-adapter", action="store_true", help="add decoder_adapter module"
     )
-    parser.add_argument(
-        "--token-pruning", action="store_true", help="add token pruning module"
-    )
     parser.add_argument("--sr", action="store_true", help="add sr module")
     parser.add_argument(
         "--amp", action="store_true", help="enable torch.cuda.amp mixed precision"

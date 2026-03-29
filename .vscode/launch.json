@@ -21,7 +21,6 @@
                 "--img-size", "256",
                 "--amp",
                 // "--training",
-                // "--attractor",
                 // "--sr",
                 
             ],
