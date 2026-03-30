@@ -58,8 +58,11 @@ class SwinTokenPrunerCNN(nn.Module):
         # 3. Apply Mask (B, N, 1)
         mask = mask.unsqueeze(-1)
         # Scale by (1/keep_ratio) using the dynamic ratio
-        actual_keep_ratio = mask.sum() / (B * N)
-        x = (x * mask) / actual_keep_ratio
+        if self.training and self.soft_training:
+            x = (x * mask) / (keep_ratio + 1e-6)
+        else:
+            actual_keep_ratio = mask.mean()
+            x = (x * mask) / (actual_keep_ratio + 1e-6)
         return x, mask
 
 

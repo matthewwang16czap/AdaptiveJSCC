@@ -12,8 +12,8 @@ def logger_configuration(config, save_log=False, test_mode=False):
         config.workdir += "_test"
     if save_log and is_main_process():
         os.makedirs(config.workdir, exist_ok=True)
-        os.makedirs(config.samples, exist_ok=True)
-        os.makedirs(config.models, exist_ok=True)
+        os.makedirs(config.samples_dir, exist_ok=True)
+        os.makedirs(config.models_dir, exist_ok=True)
     formatter = logging.Formatter("%(asctime)s - %(levelname)s] %(message)s")
     # --- Only rank 0 prints to stdout ---
     if is_main_process():
@@ -23,7 +23,7 @@ def logger_configuration(config, save_log=False, test_mode=False):
         logger.addHandler(stdhandler)
     # --- All ranks can log to file if you want shared logs ---
     if save_log:
-        filehandler = logging.FileHandler(config.log)
+        filehandler = logging.FileHandler(config.log_dir)
         filehandler.setLevel(logging.INFO)
         filehandler.setFormatter(formatter)
         logger.addHandler(filehandler)

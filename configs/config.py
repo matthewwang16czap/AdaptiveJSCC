@@ -8,15 +8,15 @@ class Config:
     def __init__(self, args):
         # Base setup
         self.seed = 42
-        self.pass_channel = True
+        self.pass_channel = (
+            args.pass_channel if hasattr(args, "pass_channel") else False
+        )
         self.channel_type = args.channel_type  # "awgn" or "rayleigh"
-        self.model = args.model
-        self.multiple_snr = [float(x) for x in args.multiple_snr.split(",")]
-        self.keep_ratios = [float(x) for x in args.keep_ratios.split(",")]
+        self.snrs = [float(x) for x in args.snrs.split(",")]
+        self.cbrs = [float(x) for x in args.cbrs.split(",")]
         self.CUDA = torch.cuda.is_available()
         self.device = torch.device("cuda:0" if self.CUDA else "cpu")
         self.amp = args.amp
-        self.norm = False
         self.quant_bits = 8
 
         # Logging and workdir
@@ -26,22 +26,21 @@ class Config:
         self.workdir = f"./history/{self.filename}"
         self.homedir = "/home/matthewwang16czap/"
         # self.homedir = "/public/home/sihanwang/"
-        self.model_path = None
-        # self.model_path = "./checkpoints/base_nonoise_step2.model"
-        self.log = f"{self.workdir}/Log_{self.filename}.log"
-        self.samples = f"{self.workdir}/samples"
-        self.models = f"{self.workdir}/models"
+        self.pretrained_model_path = None
+        # self.pretrained_model_path = "./checkpoints/base_nonoise_step2.model"
+        self.log_dir = f"{self.workdir}/Log_{self.filename}.log"
+        self.samples_dir = f"{self.workdir}/samples"
+        self.models_dir = f"{self.workdir}/models"
         self.logger = None
 
-        os.makedirs(self.samples, exist_ok=True)
-        os.makedirs(self.models, exist_ok=True)
+        os.makedirs(self.samples_dir, exist_ok=True)
+        os.makedirs(self.models_dir, exist_ok=True)
 
         # Training details
         self.training = args.training
-        self.normalize = False
         self.learning_rate = 1e-4
         self.tot_epoch = 10_000_000
-        self.distortion_metric = args.distortion_metric  # "MSE" or "MS-SSIM"
+        self.loss_type = args.loss_type  # "MSE" or "MS-SSIM"
 
         # modules enabling
         self.encoder_adapter = args.encoder_adapter
@@ -84,7 +83,7 @@ class Config:
         self.test_data_dir = testset_map.get(args.testset, [])
 
         # Model-specific setup
-        self.save_model_freq = 100  # epochs
+        self.save_model_freq = 10  # epochs
         if self.img_size == 256:
             self._setup_256(args)
         elif self.img_size == 512:
@@ -94,8 +93,8 @@ class Config:
 
     def _setup_256(self, args):
         self.image_dims = (3, 256, 256)
-        self.batch_size = 4
-        self.test_batch_size = 4
+        self.batch_size = 8
+        self.test_batch_size = 8
         self.downsample = 4  # number of downsampling layers in encoder
         self.patch_size = 2
         self.in_chans = 3
@@ -132,6 +131,7 @@ class Config:
             qk_scale=None,
             norm_layer=nn.LayerNorm,
             patch_norm=True,
+            quant_bits=self.quant_bits,
             use_adapter=args.encoder_adapter,
         )
 

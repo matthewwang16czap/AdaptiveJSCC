@@ -14,7 +14,7 @@ class Channel(nn.Module):
         self.device = config.device
         if config.logger:
             config.logger.info(
-                f"【Channel】: Built {self.chan_type} channel, SNR {config.multiple_snr} dB."
+                f"【Channel】: Built {self.chan_type} channel, SNR {config.snrs} dB."
             )
 
     # Utility: packed (real, imag) → complex

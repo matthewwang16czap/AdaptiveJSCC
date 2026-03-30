@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from utils.universal_utils import cbr_to_keep_ratio
 from .modules import (
     SwinTransformerBlock,
     MLPAdapter,
@@ -11,25 +12,30 @@ from timm.layers import trunc_normal_
 import math
 
 
-def generate_layers_keep_ratios(num_stages, target_ratio, mode="exp"):
+def get_keep_ratio(stage_idx, num_stages, target_ratio, mode="linear"):
     """
-    Returns list of keep ratios from stage 0 → stage L-1
+    Returns keep ratio for a single stage.
+
+    Args:
+        stage_idx: int, index of current stage (0-based)
+        num_stages: total number of stages
+        target_ratio: final keep ratio at last stage
+        mode: "exp", "linear", or "cosine"
     """
     if num_stages == 1:
-        return [target_ratio]
-    ratios = []
-    for i in range(num_stages):
-        t = i / (num_stages - 1)
-        if mode == "exp":
-            r = target_ratio**t
-        elif mode == "linear":
-            r = 1.0 - t * (1.0 - target_ratio)
-        elif mode == "cosine":
-            r = target_ratio + (1 - target_ratio) * (0.5 * (1 + math.cos(math.pi * t)))
-        else:
-            raise ValueError("Unknown mode")
-        ratios.append(r)
-    return ratios
+        return target_ratio
+    if not (0 <= stage_idx < num_stages):
+        raise ValueError("stage_idx out of range")
+    t = stage_idx / (num_stages - 1)
+    if mode == "exp":
+        r = target_ratio**t
+    elif mode == "linear":
+        r = 1.0 - t * (1.0 - target_ratio)
+    elif mode == "cosine":
+        r = target_ratio + (1 - target_ratio) * (0.5 * (1 + math.cos(math.pi * t)))
+    else:
+        raise ValueError("Unknown mode")
+    return r
 
 
 class BasicLayer(nn.Module):
@@ -67,7 +73,7 @@ class BasicLayer(nn.Module):
             ]
         )
         self.downsample = downsample
-        self.token_pruner = SwinTokenPrunerCNN(dim, dim, True)
+        self.token_pruner = SwinTokenPrunerCNN(dim, dim, False)
         self.adapters = (
             nn.ModuleList(
                 [
@@ -79,7 +85,7 @@ class BasicLayer(nn.Module):
             else None
         )
 
-    def forward(self, x, H, W, snr, rate):
+    def forward(self, x, H, W, snr, keep_ratio):
         """
         Args:
             x: (B, H*W, C)
@@ -92,7 +98,7 @@ class BasicLayer(nn.Module):
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
             x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
-        x, mask = self.token_pruner(x, H, W, rate)
+        x, mask = self.token_pruner(x, H, W, keep_ratio)
         x, H, W = self.downsample(x, H, W) if self.downsample is not None else (x, H, W)
         return x, mask, H, W
 
@@ -111,6 +117,7 @@ class SwinJSCC_Encoder(nn.Module):
         qk_scale=None,
         norm_layer=nn.LayerNorm,
         patch_norm=True,
+        quant_bits=None,
         use_adapter=False,
     ):
         super().__init__()
@@ -119,6 +126,7 @@ class SwinJSCC_Encoder(nn.Module):
         self.embed_dims = embed_dims
         self.patch_size = patch_size
         self.mlp_ratio = mlp_ratio
+        self.quant_bits = quant_bits
         # Patch embedding
         self.patch_embed = PatchEmbed(
             patch_size=patch_size,
@@ -161,15 +169,26 @@ class SwinJSCC_Encoder(nn.Module):
         self.norm = norm_layer(embed_dims[-1])
         self.apply(self._init_weights)
 
-    def forward(self, x, snr, target_rate):
-        B, C, H, W = x.shape
-        layer_keep_ratios = generate_layers_keep_ratios(len(self.layers), target_rate)
+    def forward(self, x, snr, cbr):
+        img_numel = x.numel()
         # Patch embedding
         x, H, W = self.patch_embed(x)
+        # Generate keep ratios for each stage
+        # output_feature have numel = (B, H*W, C) where H and W are downsampled by 2^(num_stages -1) each
+        # as patch embed has already downsampled once.
+        output_feature_numel = (
+            x.shape[0]
+            * self.embed_dims[-1]
+            * x.shape[1]
+            // (2 ** ((len(self.layers) - 1) * 2))
+        )
+        target_ratio = cbr_to_keep_ratio(
+            cbr, img_numel, output_feature_numel, self.quant_bits
+        )
         # Backbone
         for i, layer in enumerate(self.layers):
-            rate = layer_keep_ratios[i]
-            x, mask, H, W = layer(x, H, W, snr, rate)
+            keep_ratio = get_keep_ratio(i, len(self.layers), target_ratio)
+            x, mask, H, W = layer(x, H, W, snr, keep_ratio)
         x = self.norm(x)
         return x, mask, H, W
 

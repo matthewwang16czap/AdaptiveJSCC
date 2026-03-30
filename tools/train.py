@@ -18,7 +18,16 @@ def train_one_epoch(
     net.train()
     optimizer.zero_grad(set_to_none=True)
     # Initialize metrics
-    metrics_names = ["elapsed", "losses", "psnrs", "ssims", "msssims", "cbrs", "snrs"]
+    metrics_names = [
+        "elapsed",
+        "losses",
+        "psnrs",
+        "ssims",
+        "msssims",
+        "cbrs",
+        "snrs",
+        "actual_cbrs",
+    ]
     metrics = {name: AverageMeter() for name in metrics_names}
     # train batch data
     for batch_idx, data in enumerate(train_loader):
@@ -31,7 +40,7 @@ def train_one_epoch(
         ):
             (
                 recon_images,
-                [cbr, snr],
+                [cbr, snr, actual_cbr],
                 [mse, psnr, ssim, msssim],
                 img_loss,
             ) = net(input, valid, hr_input)
@@ -57,8 +66,9 @@ def train_one_epoch(
         # Update metrics
         metrics["elapsed"].update(time.time() - start_time)
         metrics["losses"].update(img_loss.item())
-        metrics["cbrs"].update(cbr)
-        metrics["snrs"].update(snr)
+        metrics["cbrs"].update(cbr.item())
+        metrics["actual_cbrs"].update(actual_cbr.item())
+        metrics["snrs"].update(snr.item())
         metrics["psnrs"].update(psnr.item())
         metrics["ssims"].update(ssim.item())
         metrics["msssims"].update(msssim.item())
@@ -74,8 +84,9 @@ def train_one_epoch(
                 f"Step [{batch_idx + 1}/{len(train_loader)}={process:.2f}%]",
                 f"Time {metrics['elapsed'].val:.3f}",
                 f"Loss {metrics['losses'].val:.2e}",
-                f"CBR {metrics['cbrs'].val:.4f}",
                 f"SNR {metrics['snrs'].val:.1f}",
+                f"CBR {metrics['cbrs'].val:.4f}",
+                f"Actual CBR {metrics['actual_cbrs'].val:.4f}",
                 f"PSNR {metrics['psnrs'].val:.3f}",
                 f"SSIM {metrics['ssims'].val:.3f}",
                 f"MSSSIM {metrics['msssims'].val:.3f}",

@@ -1,7 +1,6 @@
 from .decoder import create_decoder
 from .encoder import create_encoder
 from loss.image_losses import *
-from loss.feature_losses import *
 from .channel import Channel
 from random import choice
 import torch
@@ -12,6 +11,7 @@ from torchmetrics.image import (
 )
 from .sr.sr import SRNet
 from utils.torch_utils import *
+from utils.universal_utils import cbr_to_keep_ratio, keep_ratio_to_cbr
 
 
 class SwinJSCC(nn.Module):
@@ -28,8 +28,6 @@ class SwinJSCC(nn.Module):
             config.logger.info(encoder_kwargs)
             config.logger.info("Decoder: ")
             config.logger.info(decoder_kwargs)
-        self.feature_mse_loss = FeatureMSELoss()
-        self.feature_orthogonal_loss = FeatureOrthogonalLoss(alpha=0.8)
         self.channel = Channel(config)
         self.mse_loss = MSEWithPSNR(normalization=False)
         self.ssim = SSIM(data_range=1.0)
@@ -37,30 +35,34 @@ class SwinJSCC(nn.Module):
         # feature_channels = encoder_kwargs["embed_dims"][-1]
         self.sr = SRNet(ckpt_path="./pretrained/dmnet_x2.pth") if config.sr else None
 
-    def feature_pass_channel(self, feature, chan_param, avg_pwr=False):
-        noisy_feature = self.channel.forward(feature, chan_param, avg_pwr)
+    def feature_pass_channel(self, feature, snr_db, avg_pwr=False):
+        noisy_feature = self.channel.forward(feature, snr_db, avg_pwr)
         return noisy_feature
 
     def forward(
-        self, input_image, valid, hr_input_image, given_snr=None, given_rate=None
+        self, input_image, valid, hr_input_image, given_snr=None, given_cbr=None
     ):
         if given_snr is None:
-            snr = choice(self.config.multiple_snr)
+            snr = choice(self.config.snrs)
             snr = torch.tensor([snr], device=input_image.device)
         else:
             snr = torch.tensor([given_snr], device=input_image.device)
-        if given_rate is None:
-            rate = choice(self.config.rate)
-            rate = torch.tensor([rate], device=input_image.device)
+        if given_cbr is None:
+            cbr = choice(self.config.cbrs)
+            cbr = torch.tensor([cbr], device=input_image.device)
         else:
-            rate = torch.tensor([given_rate], device=input_image.device)
-        feature, mask, feature_H, feature_W = self.encoder(input_image, snr, rate)
-        if not self.config.training:
+            cbr = torch.tensor([given_cbr], device=input_image.device)
+        feature, mask, feature_H, feature_W = self.encoder(input_image, snr, cbr)
+        actual_keep_ratio = mask.sum() / feature.shape[0] / feature.shape[1]
+        actual_cbr = keep_ratio_to_cbr(
+            actual_keep_ratio,
+            input_image.numel(),
+            feature.numel(),
+            self.config.quant_bits,
+        )
+        if not self.training:
             # has proven 8 bit quantization doesn't affect result a lot
             feature, scale = quantize_symmetric(feature, bits=self.config.quant_bits)
-        cbr = (
-            rate * feature.numel() * (self.config.quant_bits / 8) / input_image.numel()
-        )
         with torch.autocast(device_type=input_image.device.type, enabled=False):
             avg_pwr = (
                 (
@@ -98,10 +100,7 @@ class SwinJSCC(nn.Module):
             msssim = self.msssim(recon_images, input_image).mean().detach()
         return (
             recon_images,
-            [
-                cbr.item() if isinstance(cbr, torch.Tensor) else cbr,
-                snr.item() if isinstance(snr, torch.Tensor) else snr,
-            ],
+            [cbr, snr, actual_cbr],
             [mse, psnr, ssim, msssim],
             img_loss,
         )

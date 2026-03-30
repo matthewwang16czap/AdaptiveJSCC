@@ -54,3 +54,29 @@ def quantize_symmetric(x, bits=8):
 
 def dequantize_symmetric(x_q, scale):
     return x_q.float() * scale
+
+
+def freeze_model(net, config):
+    if config.training:
+        if config.encoder_adapter:
+            for name, param in net.encoder.named_parameters():
+                if "adapters" in name:
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+        if config.decoder_adapter:
+            for name, param in net.decoder.named_parameters():
+                if "adapters" in name:
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+        if config.sr:
+            for name, param in net.named_parameters():
+                if "sr" in name:
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+        # train base model
+        if config.encoder_adapter + config.decoder_adapter + config.sr == False:
+            for name, param in net.named_parameters():
+                param.requires_grad = True

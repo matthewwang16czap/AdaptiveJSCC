@@ -11,49 +11,11 @@ from tools.train import train_one_epoch
 from utils.ddp_utils import cleanup_ddp, initialize_ddp
 from utils.logger_utils import logger_configuration
 from utils.parser_utils import create_parser
-from utils.torch_utils import load_weights, save_model, seed_torch
+from utils.torch_utils import load_weights, save_model, seed_torch, freeze_model
 
 # torch.backends.cuda.enable_flash_sdp(True)
 # torch.backends.cuda.enable_mem_efficient_sdp(True)
 # torch.backends.cuda.enable_math_sdp(False)
-
-
-def freeze_model(net, config):
-    if config.training:
-        if config.encoder_adapter:
-            for name, param in net.encoder.named_parameters():
-                if "adapters" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-        if config.decoder_adapter:
-            for name, param in net.decoder.named_parameters():
-                if "adapters" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-        if config.attractor:
-            for name, param in net.named_parameters():
-                if "attractors" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-        if config.sr:
-            for name, param in net.named_parameters():
-                if "sr" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-        # train base model
-        if (
-            config.encoder_adapter
-            + config.decoder_adapter
-            + config.attractor
-            + config.sr
-            == False
-        ):
-            for name, param in net.named_parameters():
-                param.requires_grad = True
 
 
 if __name__ == "__main__":
@@ -79,9 +41,9 @@ if __name__ == "__main__":
     # if ddp_env["rank"] == 0:
     #     logger.info(net)
     # Load weights if needed
-    if config.model_path is not None:
+    if config.pretrained_model_path is not None:
         if ddp_env["rank"] == 0:
-            load_weights(net, config.model_path)
+            load_weights(net, config.pretrained_model_path)
         # DDP initialization will sync these weights automatically
     # Freeze params
     freeze_model(net, config)
@@ -136,7 +98,7 @@ if __name__ == "__main__":
                 if ddp_env["rank"] == 0:
                     save_model(
                         net.module if isinstance(net, DDP) else net,
-                        save_path=f"{config.models}/{config.filename}_EP{epoch + 1}.model",
+                        save_path=f"{config.models_dir}/{config.filename}_EP{epoch + 1}.model",
                     )
                 test(
                     net,

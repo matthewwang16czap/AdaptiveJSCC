@@ -5,6 +5,9 @@ def create_parser():
     parser = argparse.ArgumentParser(description="SwinJSCC")
     parser.add_argument("--training", action="store_true", help="training or testing")
     parser.add_argument(
+        "--pass-channel", action="store_true", help="whether to pass channel"
+    )
+    parser.add_argument(
         "--img-size",
         type=int,
         default=256,
@@ -26,23 +29,11 @@ def create_parser():
         help="specify the testset for HR models",
     )
     parser.add_argument(
-        "--distortion-metric",
+        "--loss-type",
         type=str,
         default="MSE",
         choices=["MSE", "MS-SSIM"],
         help="evaluation metrics",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="SwinJSCC_w/_SAandRA",
-        choices=[
-            "SwinJSCC_w/o_SAandRA",
-            "SwinJSCC_w/_SA",
-            "SwinJSCC_w/_RA",
-            "SwinJSCC_w/_SAandRA",
-        ],
-        help="SwinJSCC model or SwinJSCC without channel ModNet or rate ModNet",
     )
     parser.add_argument(
         "--channel-type",
@@ -51,12 +42,8 @@ def create_parser():
         choices=["awgn", "rayleigh"],
         help="wireless channel model, awgn or rayleigh",
     )
-    parser.add_argument(
-        "--keep-ratios", type=str, default="0.125", help="bottleneck dimension"
-    )
-    parser.add_argument(
-        "--multiple-snr", type=str, default="10", help="random or fixed snr"
-    )
+    parser.add_argument("--cbrs", type=str, default="0.125", help="multiple cbrs")
+    parser.add_argument("--snrs", type=str, default="10", help="multiple snrs")
     parser.add_argument(
         "--model-size",
         type=str,

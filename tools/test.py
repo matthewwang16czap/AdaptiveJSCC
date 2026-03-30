@@ -17,19 +17,17 @@ def test(net, test_loader, logger, config):
         "msssim",
         "snr",
         "cbr",
+        "actual_cbr",
     ]
     results = []
-    for snr in config.multiple_snr:
-        for keep_ratio in config.keep_ratios:
+    for snr in config.snrs:
+        for cbr in config.cbrs:
             metrics = {name: 0.0 for name in metric_names}
             counts = 0
             with torch.no_grad():
                 for batch_idx, data in enumerate(test_loader):
                     input, valid, hr_input = get_batch_data(data, config)
-                    if (
-                        snr == config.multiple_snr[0]
-                        and keep_ratio == config.keep_ratios[0]
-                    ):
+                    if snr == config.snrs[0] and cbr == config.cbrs[0]:
                         save_path = get_path(
                             ".", "recons", f"origin_{rank}_{batch_idx}.png"
                         )
@@ -39,16 +37,16 @@ def test(net, test_loader, logger, config):
                             torchvision.utils.save_image(input[0], save_path)
                     (
                         recon_images,
-                        [cbr, snr],
+                        [_, _, actual_cbr],
                         [mse, psnr, ssim, msssim],
                         img_loss,
-                    ) = net(input, valid, hr_input, snr, keep_ratio)
+                    ) = net(input, valid, hr_input, snr, cbr)
                     # for visualization
                     if rank == 0:
                         save_path = get_path(
                             ".",
                             "recons",
-                            f"recon_{rank}_{batch_idx}_{snr}_{keep_ratio}.png",
+                            f"recon_{rank}_{batch_idx}_{snr}_{cbr}.png",
                         )
                         torchvision.utils.save_image(recon_images[0], save_path)
                     # Update batch data to metrics
@@ -56,7 +54,7 @@ def test(net, test_loader, logger, config):
                     metrics["psnr"] += psnr.item() * batch_size
                     metrics["ssim"] += ssim.item() * batch_size
                     metrics["msssim"] += msssim.item() * batch_size
-                    metrics["cbr"] += cbr * batch_size
+                    metrics["actual_cbr"] += actual_cbr.item() * batch_size
                     counts += batch_size
             # DDP reduce
             for key in metrics:
@@ -68,8 +66,8 @@ def test(net, test_loader, logger, config):
             results.append(
                 {
                     "snr": snr,
-                    "keep_ratio": keep_ratio,
-                    "cbr": metrics["cbr"],
+                    "cbr": cbr,
+                    "actual_cbr": metrics["actual_cbr"],
                     "psnr": metrics["psnr"],
                     "ssim": metrics["ssim"],
                     "msssim": metrics["msssim"],
@@ -80,8 +78,8 @@ def test(net, test_loader, logger, config):
         logger.info("Start Test:")
         logger.info(
             f"{'SNR':>8}"
-            f"{'Keep Ratio':>8}"
             f"{'CBR':>12}"
+            f"{'Actual CBR':>12}"
             f"{'PSNR':>10}"
             f"{'SSIM':>10}"
             f"{'MS-SSIM':>10}"
@@ -89,8 +87,8 @@ def test(net, test_loader, logger, config):
         for r in results:
             logger.info(
                 f"{r['snr']:>8.2f}"
-                f"{r['keep_ratio']:>8.2f}"
                 f"{r['cbr']:>12.4f}"
+                f"{r['actual_cbr']:>12.4f}"
                 f"{r['psnr']:>10.3f}"
                 f"{r['ssim']:>10.3f}"
                 f"{r['msssim']:>10.3f}"
