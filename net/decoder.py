@@ -4,6 +4,7 @@ from .modules import (
     MLPAdapter,
     PatchUnembed,
     PatchReverseMerging,
+    SwinTokenWiseChannelAdapter,
 )
 from timm.layers import trunc_normal_
 
@@ -12,7 +13,6 @@ class BasicLayer(nn.Module):
     def __init__(
         self,
         dim,
-        out_dim,
         depth,
         num_heads,
         window_size,
@@ -22,6 +22,8 @@ class BasicLayer(nn.Module):
         norm_layer=nn.LayerNorm,
         upsample=None,
         use_adapter=False,
+        use_token_pruner=False,
+        use_channel_pruner=False,
     ):
         super().__init__()
         self.dim = dim
@@ -43,6 +45,12 @@ class BasicLayer(nn.Module):
         )
         # Upsampling layer
         self.upsample = upsample
+        self.token_adapter = (
+            SwinTokenWiseChannelAdapter(dim) if use_token_pruner else None
+        )
+        self.channel_adapter = (
+            SwinTokenWiseChannelAdapter(dim) if use_channel_pruner else None
+        )
         self.adapters = (
             nn.ModuleList(
                 [
@@ -63,7 +71,10 @@ class BasicLayer(nn.Module):
             x: updated features
             H, W: updated resolution
         """
-        # Swin blocks (resolution unchanged)
+        # Before each block, apply token/channel adapters
+        x = self.token_adapter(x) if self.token_adapter is not None else x
+        x = self.channel_adapter(x) if self.channel_adapter is not None else x
+        # Swin blocks
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
             x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
@@ -86,6 +97,8 @@ class SwinJSCC_Decoder(nn.Module):
         norm_layer=nn.LayerNorm,
         patch_norm=True,
         use_adapter=False,
+        use_token_pruner=False,
+        use_channel_pruner=False,
     ):
         super().__init__()
         self.num_layers = len(depths)
@@ -118,7 +131,6 @@ class SwinJSCC_Decoder(nn.Module):
             )
             layer = BasicLayer(
                 dim=layer_dim,
-                out_dim=layer_out_dim,
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -128,20 +140,15 @@ class SwinJSCC_Decoder(nn.Module):
                 norm_layer=norm_layer,
                 upsample=layer_upsample,
                 use_adapter=use_adapter,
+                use_token_pruner=use_token_pruner,
+                use_channel_pruner=use_channel_pruner,
             )
             self.layers.append(layer)
         self.tanh = nn.Tanh()
         self.apply(self._init_weights)
 
     # Forward
-    def forward(
-        self,
-        x,
-        snr,
-        H,
-        W,
-        mask=None,
-    ):
+    def forward(self, x, snr, H, W, valid=None):
         """
         x: (B, L, C)  latent symbols
         """
@@ -156,10 +163,10 @@ class SwinJSCC_Decoder(nn.Module):
         # Nornalize to [0,1]
         x = self.tanh(x)
         x = 0.5 * (x + 1.0)
-        if mask is not None:
-            if mask.dim() == 3:
-                mask = mask.unsqueeze(1)
-            return x * mask
+        if valid is not None:
+            if valid.dim() == 3:
+                valid = valid.unsqueeze(1)
+            return x * valid
         else:
             return x
 

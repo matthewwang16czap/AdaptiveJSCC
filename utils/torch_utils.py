@@ -58,25 +58,41 @@ def dequantize_symmetric(x_q, scale):
 
 def freeze_model(net, config):
     if config.training:
+        # base network unfreeze
+        for name, param in net.named_parameters():
+            if "base" in config.training_modules:
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
+            # module-specific unfreeze in order
+        if config.token_pruner:
+            for name, param in net.named_parameters():
+                if "token_pruner" in name or "token_adapter" in name:
+                    param.requires_grad = (
+                        True if "token_pruner" in config.training_modules else False
+                    )
+        if config.channel_pruner:
+            for name, param in net.named_parameters():
+                if "channel_pruner" in name or "channel_adapter" in name:
+                    param.requires_grad = (
+                        True if "channel_pruner" in config.training_modules else False
+                    )
         if config.encoder_adapter:
             for name, param in net.encoder.named_parameters():
-                if "adapters" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
+                if "encoder_adapter" in name:
+                    param.requires_grad = (
+                        True if "encoder_adapter" in config.training_modules else False
+                    )
         if config.decoder_adapter:
             for name, param in net.decoder.named_parameters():
-                if "adapters" in name:
-                    param.requires_grad = True
-                else:
+                if "decoder_adapter" in name:
+                    param.requires_grad = (
+                        True if "decoder_adapter" in config.training_modules else False
+                    )
                     param.requires_grad = False
         if config.sr:
             for name, param in net.named_parameters():
                 if "sr" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-        # train base model
-        if config.encoder_adapter + config.decoder_adapter + config.sr == False:
-            for name, param in net.named_parameters():
-                param.requires_grad = True
+                    param.requires_grad = (
+                        True if "sr" in config.training_modules else False
+                    )

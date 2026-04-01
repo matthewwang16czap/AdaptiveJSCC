@@ -24,17 +24,25 @@ class AverageMeter:
 
 
 # size are total number of elements
-def cbr_to_keep_ratio(cbr, img_size, feature_size, quant_bits):
+def cbr_to_keep_ratio(cbr, img_size, feature_size, mask_size, quant_bits):
     if quant_bits is None:
         quant_bits = 16  # default to FP16/BF16 setup
-    compression_ratio = feature_size * (quant_bits / 8) / img_size
+    feature_precision_ratio = quant_bits / 8  # 8 bits int for image
+    mask_precision_ratio = 1 / 8  # 1 bit per mask element
+    compression_ratio = (
+        feature_size * feature_precision_ratio + mask_size * mask_precision_ratio
+    ) / img_size
     return cbr / compression_ratio
 
 
-def keep_ratio_to_cbr(keep_ratio, img_size, feature_size, quant_bits):
+def keep_ratio_to_cbr(keep_ratio, img_size, feature_size, mask_size, quant_bits):
     if quant_bits is None:
         quant_bits = 16  # default to FP16/BF16 setup
-    compression_ratio = feature_size * (quant_bits / 8) / img_size
+    feature_precision_ratio = quant_bits / 8  # 8 bits int for image
+    mask_precision_ratio = 1 / 8  # 1 bit per mask element
+    compression_ratio = (
+        feature_size * feature_precision_ratio + mask_size * mask_precision_ratio
+    ) / img_size
     return keep_ratio * compression_ratio
 
 

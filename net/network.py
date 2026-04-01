@@ -53,13 +53,6 @@ class SwinJSCC(nn.Module):
         else:
             cbr = torch.tensor([given_cbr], device=input_image.device)
         feature, mask, feature_H, feature_W = self.encoder(input_image, snr, cbr)
-        actual_keep_ratio = mask.sum() / feature.shape[0] / feature.shape[1]
-        actual_cbr = keep_ratio_to_cbr(
-            actual_keep_ratio,
-            input_image.numel(),
-            feature.numel(),
-            self.config.quant_bits,
-        )
         if not self.training:
             # has proven 8 bit quantization doesn't affect result a lot
             feature, scale = quantize_symmetric(feature, bits=self.config.quant_bits)
@@ -100,7 +93,7 @@ class SwinJSCC(nn.Module):
             msssim = self.msssim(recon_images, input_image).mean().detach()
         return (
             recon_images,
-            [cbr, snr, actual_cbr],
+            [cbr, snr],
             [mse, psnr, ssim, msssim],
             img_loss,
         )

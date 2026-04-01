@@ -5,6 +5,9 @@ def create_parser():
     parser = argparse.ArgumentParser(description="SwinJSCC")
     parser.add_argument("--training", action="store_true", help="training or testing")
     parser.add_argument(
+        "--training-modules", type=str, default="base", help="which modules to train"
+    )
+    parser.add_argument(
         "--pass-channel", action="store_true", help="whether to pass channel"
     )
     parser.add_argument(
@@ -50,6 +53,16 @@ def create_parser():
         default="base",
         choices=["small", "base", "large", "baseline"],
         help="SwinJSCC model size",
+    )
+    parser.add_argument(
+        "--token-pruner",
+        action="store_true",
+        help="whether to use pruner for adaptive token pruning",
+    )
+    parser.add_argument(
+        "--channel-pruner",
+        action="store_true",
+        help="whether to use pruner for adaptive channel pruning",
     )
     parser.add_argument(
         "--encoder-adapter", action="store_true", help="add encoder_adapter module"

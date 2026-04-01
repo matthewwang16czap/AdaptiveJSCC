@@ -24,10 +24,10 @@ class Config:
         self.plot_step = 10000
         self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.filename}"
-        self.homedir = "/home/matthewwang16czap/"
-        # self.homedir = "/public/home/sihanwang/"
-        self.pretrained_model_path = None
-        # self.pretrained_model_path = "./checkpoints/base_nonoise_step2.model"
+        # self.homedir = "/home/matthewwang16czap/"
+        self.homedir = "/home/ubuntu/"
+        # self.pretrained_model_path = None
+        self.pretrained_model_path = "./pretrained/base1.model"
         self.log_dir = f"{self.workdir}/Log_{self.filename}.log"
         self.samples_dir = f"{self.workdir}/samples"
         self.models_dir = f"{self.workdir}/models"
@@ -43,9 +43,12 @@ class Config:
         self.loss_type = args.loss_type  # "MSE" or "MS-SSIM"
 
         # modules enabling
+        self.token_pruner = args.token_pruner
+        self.channel_pruner = args.channel_pruner
         self.encoder_adapter = args.encoder_adapter
         self.decoder_adapter = args.decoder_adapter
         self.sr = args.sr
+        self.training_modules = [x for x in args.training_modules.split(",")]
 
         # Dataset & architecture setup
         self._setup_dataset(args)
@@ -83,7 +86,7 @@ class Config:
         self.test_data_dir = testset_map.get(args.testset, [])
 
         # Model-specific setup
-        self.save_model_freq = 10  # epochs
+        self.save_model_freq = 100  # epochs
         if self.img_size == 256:
             self._setup_256(args)
         elif self.img_size == 512:
@@ -133,6 +136,8 @@ class Config:
             patch_norm=True,
             quant_bits=self.quant_bits,
             use_adapter=args.encoder_adapter,
+            use_token_pruner=args.token_pruner,
+            use_channel_pruner=args.channel_pruner,
         )
 
         self.decoder_kwargs = dict(
@@ -148,6 +153,8 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.decoder_adapter,
+            use_token_pruner=args.token_pruner,
+            use_channel_pruner=args.channel_pruner,
         )
 
     def _setup_512(self, args):
@@ -186,6 +193,8 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.encoder_adapter,
+            use_token_pruner=args.token_pruner,
+            use_channel_pruner=args.channel_pruner,
         )
         self.decoder_kwargs = dict(
             patch_size=self.patch_size,
@@ -200,4 +209,6 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             use_adapter=args.decoder_adapter,
+            use_token_pruner=args.token_pruner,
+            use_channel_pruner=args.channel_pruner,
         )

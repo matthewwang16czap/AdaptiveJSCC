@@ -17,7 +17,6 @@ def test(net, test_loader, logger, config):
         "msssim",
         "snr",
         "cbr",
-        "actual_cbr",
     ]
     results = []
     for snr in config.snrs:
@@ -37,7 +36,7 @@ def test(net, test_loader, logger, config):
                             torchvision.utils.save_image(input[0], save_path)
                     (
                         recon_images,
-                        [_, _, actual_cbr],
+                        [_, _],
                         [mse, psnr, ssim, msssim],
                         img_loss,
                     ) = net(input, valid, hr_input, snr, cbr)
@@ -54,7 +53,6 @@ def test(net, test_loader, logger, config):
                     metrics["psnr"] += psnr.item() * batch_size
                     metrics["ssim"] += ssim.item() * batch_size
                     metrics["msssim"] += msssim.item() * batch_size
-                    metrics["actual_cbr"] += actual_cbr.item() * batch_size
                     counts += batch_size
             # DDP reduce
             for key in metrics:
@@ -67,7 +65,6 @@ def test(net, test_loader, logger, config):
                 {
                     "snr": snr,
                     "cbr": cbr,
-                    "actual_cbr": metrics["actual_cbr"],
                     "psnr": metrics["psnr"],
                     "ssim": metrics["ssim"],
                     "msssim": metrics["msssim"],
@@ -79,7 +76,6 @@ def test(net, test_loader, logger, config):
         logger.info(
             f"{'SNR':>8}"
             f"{'CBR':>12}"
-            f"{'Actual CBR':>12}"
             f"{'PSNR':>10}"
             f"{'SSIM':>10}"
             f"{'MS-SSIM':>10}"
@@ -88,12 +84,11 @@ def test(net, test_loader, logger, config):
             logger.info(
                 f"{r['snr']:>8.2f}"
                 f"{r['cbr']:>12.4f}"
-                f"{r['actual_cbr']:>12.4f}"
                 f"{r['psnr']:>10.3f}"
                 f"{r['ssim']:>10.3f}"
                 f"{r['msssim']:>10.3f}"
             )
         logger.info("Finish Test!")
-    with open(get_path(get_logger_dir(logger), "test_results.json"), "w") as f:
-        json.dump(results, f, indent=4)
+        with open(get_path(get_logger_dir(logger), "test_results.json"), "w") as f:
+            json.dump(results, f, indent=4)
     return results
