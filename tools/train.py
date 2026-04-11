@@ -32,7 +32,7 @@ def train_one_epoch(
     for batch_idx, data in enumerate(train_loader):
         start_time = time.time()
         global_step += 1
-        input, valid, hr_input = get_batch_data(data, config)
+        input, valid = get_batch_data(data, config)
         # Forward and backward pass
         with torch.autocast(
             device_type=input.device.type, enabled=(scaler is not None)
@@ -42,7 +42,7 @@ def train_one_epoch(
                 [cbr, snr],
                 [mse, psnr, ssim, msssim],
                 img_loss,
-            ) = net(input, valid, hr_input)
+            ) = net(input, valid)
             img_loss = img_loss / config.accum_steps
         if scaler is not None:
             if is_ddp and (batch_idx % config.accum_steps != config.accum_steps - 1):

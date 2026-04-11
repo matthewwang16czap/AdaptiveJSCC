@@ -1,10 +1,12 @@
 from torch import nn
 from .modules import (
     SwinTransformerBlock,
-    MLPAdapter,
+    MLPSNRAdapter,
     PatchUnembed,
+    RefinedPatchUnembed,
     PatchReverseMerging,
-    SwinTokenWiseChannelAdapter,
+    DecoderPrunerAdapter,
+    DecoderIntermediatePrunerAdapter,
 )
 from timm.layers import trunc_normal_
 
@@ -21,9 +23,10 @@ class BasicLayer(nn.Module):
         qk_scale=None,
         norm_layer=nn.LayerNorm,
         upsample=None,
-        use_adapter=False,
+        use_snr_adapter=False,
         use_token_pruner=False,
         use_channel_pruner=False,
+        module_hidden_ratio=1,
     ):
         super().__init__()
         self.dim = dim
@@ -45,20 +48,40 @@ class BasicLayer(nn.Module):
         )
         # Upsampling layer
         self.upsample = upsample
-        self.token_adapter = (
-            SwinTokenWiseChannelAdapter(dim) if use_token_pruner else None
-        )
-        self.channel_adapter = (
-            SwinTokenWiseChannelAdapter(dim) if use_channel_pruner else None
-        )
-        self.adapters = (
+        self.token_pruning_adapters = (
             nn.ModuleList(
                 [
-                    MLPAdapter(dim, hidden_ratio=1, snr_adaptive=True)
+                    DecoderIntermediatePrunerAdapter(
+                        dim, hidden_ratio=module_hidden_ratio
+                    )
                     for _ in range(depth)
                 ]
             )
-            if use_adapter is True
+            if use_token_pruner
+            else None
+        )
+        self.channel_pruning_adapters = (
+            nn.ModuleList(
+                [
+                    DecoderIntermediatePrunerAdapter(
+                        dim, hidden_ratio=module_hidden_ratio
+                    )
+                    for _ in range(depth)
+                ]
+            )
+            if use_channel_pruner
+            else None
+        )
+        self.snr_adapters = (
+            nn.ModuleList(
+                [
+                    MLPSNRAdapter(
+                        dim, hidden_ratio=module_hidden_ratio, snr_adaptive=True
+                    )
+                    for _ in range(depth)
+                ]
+            )
+            if use_snr_adapter is True
             else None
         )
 
@@ -71,13 +94,20 @@ class BasicLayer(nn.Module):
             x: updated features
             H, W: updated resolution
         """
-        # Before each block, apply token/channel adapters
-        x = self.token_adapter(x) if self.token_adapter is not None else x
-        x = self.channel_adapter(x) if self.channel_adapter is not None else x
         # Swin blocks
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
-            x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
+            x = (
+                self.channel_pruning_adapters[i](x)
+                if self.channel_pruning_adapters is not None
+                else x
+            )
+            x = (
+                self.token_pruning_adapters[i](x)
+                if self.token_pruning_adapters is not None
+                else x
+            )
+            x = self.snr_adapters[i](x, snr=snr) if self.snr_adapters is not None else x
         x, H, W = self.upsample(x, H, W) if self.upsample is not None else (x, H, W)
         return x, H, W
 
@@ -96,9 +126,10 @@ class SwinJSCC_Decoder(nn.Module):
         qk_scale=None,
         norm_layer=nn.LayerNorm,
         patch_norm=True,
-        use_adapter=False,
+        use_snr_adapter=False,
         use_token_pruner=False,
         use_channel_pruner=False,
+        module_hidden_ratio=1,
     ):
         super().__init__()
         self.num_layers = len(depths)
@@ -139,11 +170,17 @@ class SwinJSCC_Decoder(nn.Module):
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
                 upsample=layer_upsample,
-                use_adapter=use_adapter,
+                use_snr_adapter=use_snr_adapter,
                 use_token_pruner=use_token_pruner,
                 use_channel_pruner=use_channel_pruner,
+                module_hidden_ratio=module_hidden_ratio,
             )
             self.layers.append(layer)
+        self.pruner_adapter = (
+            DecoderPrunerAdapter(embed_dims[0], hidden_ratio=module_hidden_ratio)
+            if use_token_pruner or use_channel_pruner
+            else None
+        )
         self.tanh = nn.Tanh()
         self.apply(self._init_weights)
 
@@ -156,6 +193,7 @@ class SwinJSCC_Decoder(nn.Module):
         B, L, C = x.shape
         assert H * W == L, "feature size does not match H, W"
         # Decoder backbone
+        x = self.pruner_adapter(x, H, W) if self.pruner_adapter is not None else x
         for layer in self.layers:
             x, H, W = layer(x, H, W, snr)
         # Tokens → image

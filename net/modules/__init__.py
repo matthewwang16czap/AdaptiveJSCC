@@ -1,10 +1,16 @@
-from .adapter import LinearAdapter, MLPAdapter, ILAdapter
-from .patch import PatchEmbed, PatchMerging, PatchReverseMerging, PatchUnembed
+from .snr_adapter import LinearSNRAdapter, MLPSNRAdapter, ILAdapter
+from .patch import (
+    PatchEmbed,
+    PatchMerging,
+    PatchReverseMerging,
+    PatchUnembed,
+    RefinedPatchUnembed,
+)
 from .swin import SwinTransformerBlock
 from .pruner import (
-    SwinTokenPruner,
-    SwinChannelPruner,
-    SwinTokenWiseChannelPruner,
-    SwinChannelAdapter,
-    SwinTokenWiseChannelAdapter,
+    EncoderTokenPruner,
+    EncoderChannelPruner,
+    EncoderIntermediatePrunerAdapter,
+    DecoderPrunerAdapter,
+    DecoderIntermediatePrunerAdapter,
 )

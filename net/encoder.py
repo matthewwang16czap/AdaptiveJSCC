@@ -1,45 +1,16 @@
 import torch
 from torch import nn
-from utils.universal_utils import cbr_to_keep_ratio
+from utils.model_utils import compute_token_channel_keep_ratio, cbr_to_keep_ratio
 from .modules import (
     SwinTransformerBlock,
-    MLPAdapter,
+    MLPSNRAdapter,
     PatchEmbed,
     PatchMerging,
-    SwinTokenPruner,
-    SwinChannelPruner,
-    SwinTokenWiseChannelPruner,
+    EncoderTokenPruner,
+    EncoderChannelPruner,
+    EncoderIntermediatePrunerAdapter,
 )
 from timm.layers import trunc_normal_
-import math
-
-
-def get_keep_ratio(stage_idx, num_stages, target_ratio, mode="last"):
-    """
-    Returns keep ratio for a single stage.
-
-    Args:
-        stage_idx: int, index of current stage (0-based)
-        num_stages: total number of stages
-        target_ratio: final keep ratio at last stage
-        mode: "exp", "linear", or "cosine"
-    """
-    if num_stages == 1:
-        return target_ratio
-    if not (0 <= stage_idx < num_stages):
-        raise ValueError("stage_idx out of range")
-    t = stage_idx / (num_stages - 1)
-    if mode == "exp":
-        r = target_ratio**t
-    elif mode == "linear":
-        r = 1.0 - t * (1.0 - target_ratio)
-    elif mode == "cosine":
-        r = target_ratio + (1 - target_ratio) * (0.5 * (1 + math.cos(math.pi * t)))
-    elif mode == "last":
-        r = target_ratio if stage_idx == num_stages - 1 else 1.0
-    else:
-        raise ValueError("Unknown mode")
-    return r
 
 
 class BasicLayer(nn.Module):
@@ -54,9 +25,10 @@ class BasicLayer(nn.Module):
         qk_scale=None,
         norm_layer=nn.LayerNorm,
         downsample=None,
-        use_adapter=False,
+        use_snr_adapter=False,
         use_token_pruner=False,
         use_channel_pruner=False,
+        module_hidden_ratio=1,
     ):
         super().__init__()
         self.dim = dim
@@ -77,22 +49,44 @@ class BasicLayer(nn.Module):
             ]
         )
         self.downsample = downsample
-        self.token_pruner = SwinTokenPruner(dim) if use_token_pruner else None
-        self.channel_pruner = (
-            SwinTokenWiseChannelPruner(dim) if use_channel_pruner else None
-        )
-        self.adapters = (
+        self.token_pruning_adapters = (
             nn.ModuleList(
                 [
-                    MLPAdapter(dim, hidden_ratio=1, snr_adaptive=True)
+                    EncoderIntermediatePrunerAdapter(
+                        dim, hidden_ratio=module_hidden_ratio
+                    )
                     for _ in range(depth)
                 ]
             )
-            if use_adapter is True
+            if use_token_pruner
+            else None
+        )
+        self.channel_pruning_adapters = (
+            nn.ModuleList(
+                [
+                    EncoderIntermediatePrunerAdapter(
+                        dim, hidden_ratio=module_hidden_ratio
+                    )
+                    for _ in range(depth)
+                ]
+            )
+            if use_channel_pruner
+            else None
+        )
+        self.snr_adapters = (
+            nn.ModuleList(
+                [
+                    MLPSNRAdapter(
+                        dim, hidden_ratio=module_hidden_ratio, snr_adaptive=True
+                    )
+                    for _ in range(depth)
+                ]
+            )
+            if use_snr_adapter is True
             else None
         )
 
-    def forward(self, x, H, W, snr, keep_ratio):
+    def forward(self, x, H, W, snr=None):
         """
         Args:
             x: (B, H*W, C)
@@ -101,22 +95,23 @@ class BasicLayer(nn.Module):
             x: transformed features
             H, W: updated resolution
         """
-        mask = None
+        if self.snr_adapters is not None and snr is None:
+            raise ValueError("SNR must be provided if using SNR adapters")
         for i, blk in enumerate(self.blocks):
             x = blk(x, H, W)
-            x = self.adapters[i](x, snr=snr) if self.adapters is not None else x
-        x, mask = (
-            self.token_pruner(x, keep_ratio)
-            if self.token_pruner is not None
-            else (x, mask)
-        )
-        x, mask = (
-            self.channel_pruner(x, keep_ratio)
-            if self.channel_pruner is not None
-            else (x, mask)
-        )
+            x = self.snr_adapters[i](x, snr=snr) if self.snr_adapters is not None else x
+            x = (
+                (self.channel_pruning_adapters[i](x))
+                if self.channel_pruning_adapters is not None
+                else x
+            )
+            x = (
+                (self.token_pruning_adapters[i](x))
+                if self.token_pruning_adapters is not None
+                else x
+            )
         x, H, W = self.downsample(x, H, W) if self.downsample is not None else (x, H, W)
-        return x, mask, H, W
+        return x, H, W
 
 
 class SwinJSCC_Encoder(nn.Module):
@@ -134,9 +129,10 @@ class SwinJSCC_Encoder(nn.Module):
         norm_layer=nn.LayerNorm,
         patch_norm=True,
         quant_bits=None,
-        use_adapter=False,
+        use_snr_adapter=False,
         use_token_pruner=False,
         use_channel_pruner=False,
+        module_hidden_ratio=1,
     ):
         super().__init__()
         self.num_layers = len(depths)
@@ -145,7 +141,7 @@ class SwinJSCC_Encoder(nn.Module):
         self.patch_size = patch_size
         self.mlp_ratio = mlp_ratio
         self.quant_bits = quant_bits
-        self.use_adapter = use_adapter
+        self.use_snr_adapter = use_snr_adapter
         self.use_token_pruner = use_token_pruner
         self.use_channel_pruner = use_channel_pruner
         # Patch embedding
@@ -183,15 +179,31 @@ class SwinJSCC_Encoder(nn.Module):
                 qk_scale=qk_scale,
                 norm_layer=norm_layer,
                 downsample=layer_downsample,
-                use_adapter=use_adapter,
+                use_snr_adapter=use_snr_adapter,
                 use_token_pruner=use_token_pruner,
                 use_channel_pruner=use_channel_pruner,
             )
             self.layers.append(layer)
+        self.channel_pruner = (
+            EncoderChannelPruner(embed_dims[-1], hidden_ratio=module_hidden_ratio)
+            if use_channel_pruner
+            else None
+        )
+        self.token_pruner = (
+            EncoderTokenPruner(embed_dims[-1], hidden_ratio=module_hidden_ratio)
+            if use_token_pruner
+            else None
+        )
         self.norm = norm_layer(embed_dims[-1])
         self.apply(self._init_weights)
 
-    def forward(self, x, snr, cbr):
+    def forward(self, x, snr=None, cbr=None, token_channel_balance_ratio=0.1):
+        if self.use_snr_adapter and snr is None:
+            raise ValueError("SNR must be provided if using SNR adapters")
+        if (self.use_token_pruner or self.use_channel_pruner) and cbr is None:
+            raise ValueError(
+                "CBR must be provided if using token pruner or channel pruner"
+            )
         img_numel = x.numel()
         # Patch embedding
         x, H, W = self.patch_embed(x)
@@ -204,16 +216,36 @@ class SwinJSCC_Encoder(nn.Module):
             * x.shape[1]
             // (2 ** ((len(self.layers) - 1) * 2))
         )
-        mask_numel = img_numel if self.use_channel_pruner else x.shape[0] * x.shape[1]
-        target_ratio = cbr_to_keep_ratio(
-            cbr, img_numel, output_feature_numel, mask_numel, self.quant_bits
-        )
+        mask_numel = 0
         # Backbone
         for i, layer in enumerate(self.layers):
-            keep_ratio = get_keep_ratio(i, len(self.layers), target_ratio)
-            x, mask, H, W = layer(x, H, W, snr, keep_ratio)
+            x, H, W = layer(x, H, W, snr)
+        # pruner
+        keep_ratio = cbr_to_keep_ratio(
+            cbr, img_numel, output_feature_numel, mask_numel, self.quant_bits
+        )
+        token_keep_ratio, channel_keep_ratio = None, None
+        if self.use_token_pruner and self.use_channel_pruner:
+            token_keep_ratio, channel_keep_ratio = compute_token_channel_keep_ratio(
+                keep_ratio, token_channel_balance_ratio
+            )
+        elif self.use_token_pruner:
+            token_keep_ratio = keep_ratio
+        elif self.use_channel_pruner:
+            channel_keep_ratio = keep_ratio
+        x = (
+            self.channel_pruner(x, channel_keep_ratio)
+            if self.channel_pruner is not None
+            else x
+        )
+        x = (
+            self.token_pruner(x, H, W, token_keep_ratio)
+            if self.token_pruner is not None
+            else x
+        )
+        # normalize before output
         x = self.norm(x)
-        return x, mask, H, W
+        return x, H, W
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):

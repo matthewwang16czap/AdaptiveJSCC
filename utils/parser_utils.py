@@ -32,13 +32,6 @@ def create_parser():
         help="specify the testset for HR models",
     )
     parser.add_argument(
-        "--loss-type",
-        type=str,
-        default="MSE",
-        choices=["MSE", "MS-SSIM"],
-        help="evaluation metrics",
-    )
-    parser.add_argument(
         "--channel-type",
         type=str,
         default="awgn",
@@ -65,12 +58,14 @@ def create_parser():
         help="whether to use pruner for adaptive channel pruning",
     )
     parser.add_argument(
-        "--encoder-adapter", action="store_true", help="add encoder_adapter module"
+        "--snr-adapter", action="store_true", help="add snr adapter module"
     )
     parser.add_argument(
-        "--decoder-adapter", action="store_true", help="add decoder_adapter module"
+        "--token-channel-balance-ratio",
+        type=float,
+        default=0.1,
+        help="balance ratio for token and channel pruning, larger means more token pruning",
     )
-    parser.add_argument("--sr", action="store_true", help="add sr module")
     parser.add_argument(
         "--amp", action="store_true", help="enable torch.cuda.amp mixed precision"
     )

@@ -142,3 +142,36 @@ class PatchUnembed(nn.Module):
         x = x.permute(0, 3, 1, 4, 2, 5).contiguous()
         x = x.view(B, self.in_chans, H * self.patch_size, W * self.patch_size)
         return x, H * self.patch_size, W * self.patch_size
+
+
+class RefinedPatchUnembed(nn.Module):
+    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
+        super().__init__()
+        self.patch_size = patch_size
+        self.in_chans = in_chans
+        self.embed_dim = embed_dim
+        # Keep the original norm layer
+        self.norm = norm_layer(embed_dim) if norm_layer is not None else None
+        # Original projection
+        self.proj = nn.Linear(embed_dim, patch_size * patch_size * in_chans)
+        # The CNN Refiner (Inpainting)
+        self.refiner = nn.Sequential(
+            nn.Conv2d(in_chans, embed_dim, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(embed_dim, in_chans, kernel_size=3, padding=1),
+        )
+
+    def forward(self, x, H, W):
+        # 1. Standard Swin Normalization
+        if self.norm is not None:
+            # Important: LN happens before the linear projection
+            x = self.norm(x)
+        # 2. Project and Reassemble
+        x = self.proj(x)
+        x = x.view(x.shape[0], H, W, self.in_chans, self.patch_size, self.patch_size)
+        x = x.permute(0, 3, 1, 4, 2, 5).contiguous()
+        x = x.view(x.shape[0], self.in_chans, H * self.patch_size, W * self.patch_size)
+        # 3. Refine (Inpaint the blurs)
+        # This part 'fixes' what the normalization and projection might have smeared
+        x = x + self.refiner(x)
+        return x, H * self.patch_size, W * self.patch_size

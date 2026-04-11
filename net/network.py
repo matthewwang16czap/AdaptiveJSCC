@@ -1,6 +1,7 @@
 from .decoder import create_decoder
 from .encoder import create_encoder
-from loss.image_losses import *
+from loss.image_losses import MSEWithPSNR
+from utils.model_utils import quantize_symmetric, dequantize_symmetric
 from .channel import Channel
 from random import choice
 import torch
@@ -9,9 +10,6 @@ from torchmetrics.image import (
     StructuralSimilarityIndexMeasure as SSIM,
     MultiScaleStructuralSimilarityIndexMeasure as MS_SSIM,
 )
-from .sr.sr import SRNet
-from utils.torch_utils import *
-from utils.universal_utils import cbr_to_keep_ratio, keep_ratio_to_cbr
 
 
 class SwinJSCC(nn.Module):
@@ -33,15 +31,12 @@ class SwinJSCC(nn.Module):
         self.ssim = SSIM(data_range=1.0)
         self.msssim = MS_SSIM(data_range=1.0)
         # feature_channels = encoder_kwargs["embed_dims"][-1]
-        self.sr = SRNet(ckpt_path="./pretrained/dmnet_x2.pth") if config.sr else None
 
     def feature_pass_channel(self, feature, snr_db, avg_pwr=False):
         noisy_feature = self.channel.forward(feature, snr_db, avg_pwr)
         return noisy_feature
 
-    def forward(
-        self, input_image, valid, hr_input_image, given_snr=None, given_cbr=None
-    ):
+    def forward(self, input_image, valid, given_snr=None, given_cbr=None):
         if given_snr is None:
             snr = choice(self.config.snrs)
             snr = torch.tensor([snr], device=input_image.device)
@@ -52,7 +47,10 @@ class SwinJSCC(nn.Module):
             cbr = torch.tensor([cbr], device=input_image.device)
         else:
             cbr = torch.tensor([given_cbr], device=input_image.device)
-        feature, mask, feature_H, feature_W = self.encoder(input_image, snr, cbr)
+        feature, feature_H, feature_W = self.encoder(
+            input_image, snr, cbr, self.config.token_channel_balance_ratio
+        )
+        mask = feature != 0
         if not self.training:
             # has proven 8 bit quantization doesn't affect result a lot
             feature, scale = quantize_symmetric(feature, bits=self.config.quant_bits)
@@ -61,7 +59,7 @@ class SwinJSCC(nn.Module):
                 (
                     (feature.float().pow(2).sum()) / mask.float().sum().clamp(min=1.0)
                 ).clamp(min=-1e9)
-                if mask is not None
+                if mask.sum() < feature.numel()
                 else (feature.float().pow(2).mean())
             )
         if self.config.pass_channel:
@@ -70,27 +68,16 @@ class SwinJSCC(nn.Module):
             noisy_feature = feature
         if not self.training:
             noisy_feature = dequantize_symmetric(noisy_feature, scale)
-        noisy_feature = noisy_feature * mask if mask is not None else noisy_feature
+        noisy_feature = noisy_feature * mask
         recon_images = self.decoder(noisy_feature, snr, feature_H, feature_W, valid)
-        # Super Resolution
-        if self.sr is not None:
-            recon_images = self.sr(recon_images.detach())
-        # Compute loss and metrics
-        if self.sr is not None:
-            img_loss, mse, psnr = self.mse_loss(recon_images, hr_input_image, valid)
-        else:
-            img_loss, mse, psnr = self.mse_loss(recon_images, input_image, valid)
+        img_loss, mse, psnr = self.mse_loss(recon_images, input_image, valid)
         img_loss = img_loss.mean()
         # rescale to [0,255] loss to avoid too small loss
         img_loss = img_loss * 255 * 255
         mse = mse.mean()
         psnr = psnr.mean()
-        if self.sr is not None:
-            ssim = self.ssim(recon_images, hr_input_image).mean().detach()
-            msssim = self.msssim(recon_images, hr_input_image).mean().detach()
-        else:
-            ssim = self.ssim(recon_images, input_image).mean().detach()
-            msssim = self.msssim(recon_images, input_image).mean().detach()
+        ssim = self.ssim(recon_images, input_image).mean().detach()
+        msssim = self.msssim(recon_images, input_image).mean().detach()
         return (
             recon_images,
             [cbr, snr],

@@ -1,4 +1,3 @@
-import os
 import torch
 import torch.distributed as dist
 import torch.optim as optim
@@ -11,7 +10,8 @@ from tools.train import train_one_epoch
 from utils.ddp_utils import cleanup_ddp, initialize_ddp
 from utils.logger_utils import logger_configuration
 from utils.parser_utils import create_parser
-from utils.torch_utils import load_weights, save_model, seed_torch, freeze_model
+from utils.torch_utils import load_weights, save_model, seed_torch
+from utils.model_utils import freeze_model
 
 # torch.backends.cuda.enable_flash_sdp(True)
 # torch.backends.cuda.enable_mem_efficient_sdp(True)
@@ -98,7 +98,7 @@ if __name__ == "__main__":
                 if ddp_env["rank"] == 0:
                     save_model(
                         net.module if isinstance(net, DDP) else net,
-                        save_path=f"{config.models_dir}/{config.filename}_EP{epoch + 1}.model",
+                        save_path=f"{config.models_dir}/{config.save_filename}_EP{epoch + 1}.model",
                     )
                 test(
                     net,

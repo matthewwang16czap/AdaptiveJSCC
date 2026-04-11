@@ -25,21 +25,18 @@ def test(net, test_loader, logger, config):
             counts = 0
             with torch.no_grad():
                 for batch_idx, data in enumerate(test_loader):
-                    input, valid, hr_input = get_batch_data(data, config)
+                    input, valid = get_batch_data(data, config)
                     if snr == config.snrs[0] and cbr == config.cbrs[0]:
                         save_path = get_path(
                             ".", "recons", f"origin_{rank}_{batch_idx}.png"
                         )
-                        if config.sr:
-                            torchvision.utils.save_image(hr_input[0], save_path)
-                        else:
-                            torchvision.utils.save_image(input[0], save_path)
+                        torchvision.utils.save_image(input[0], save_path)
                     (
                         recon_images,
                         [_, _],
                         [mse, psnr, ssim, msssim],
                         img_loss,
-                    ) = net(input, valid, hr_input, snr, cbr)
+                    ) = net(input, valid, snr, cbr)
                     # for visualization
                     if rank == 0:
                         save_path = get_path(

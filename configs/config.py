@@ -16,19 +16,19 @@ class Config:
         self.cbrs = [float(x) for x in args.cbrs.split(",")]
         self.CUDA = torch.cuda.is_available()
         self.device = torch.device("cuda:0" if self.CUDA else "cpu")
-        self.amp = args.amp
-        self.quant_bits = 8
+        self.amp = args.amp if hasattr(args, "amp") else False
+        self.quant_bits = args.quant_bits if hasattr(args, "quant_bits") else 8
 
         # Logging and workdir
         self.print_step = 100
         self.plot_step = 10000
-        self.filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.workdir = f"./history/{self.filename}"
+        self.save_filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.workdir = f"./history/{self.save_filename}"
         # self.homedir = "/home/matthewwang16czap/"
         self.homedir = "/home/ubuntu/"
         # self.pretrained_model_path = None
-        self.pretrained_model_path = "./pretrained/base1.model"
-        self.log_dir = f"{self.workdir}/Log_{self.filename}.log"
+        self.pretrained_model_path = "./pretrained/base3.model"
+        self.log_dir = f"{self.workdir}/Log_{self.save_filename}.log"
         self.samples_dir = f"{self.workdir}/samples"
         self.models_dir = f"{self.workdir}/models"
         self.logger = None
@@ -37,17 +37,23 @@ class Config:
         os.makedirs(self.models_dir, exist_ok=True)
 
         # Training details
-        self.training = args.training
+        self.training = args.training if hasattr(args, "training") else False
         self.learning_rate = 1e-4
         self.tot_epoch = 10_000_000
-        self.loss_type = args.loss_type  # "MSE" or "MS-SSIM"
 
         # modules enabling
-        self.token_pruner = args.token_pruner
-        self.channel_pruner = args.channel_pruner
-        self.encoder_adapter = args.encoder_adapter
-        self.decoder_adapter = args.decoder_adapter
-        self.sr = args.sr
+        self.token_pruner = (
+            args.token_pruner if hasattr(args, "token_pruner") else False
+        )
+        self.token_channel_balance_ratio = (
+            args.token_channel_balance_ratio
+            if hasattr(args, "token_channel_balance_ratio")
+            else 0.1
+        )
+        self.channel_pruner = (
+            args.channel_pruner if hasattr(args, "channel_pruner") else False
+        )
+        self.snr_adapter = args.snr_adapter if hasattr(args, "snr_adapter") else False
         self.training_modules = [x for x in args.training_modules.split(",")]
 
         # Dataset & architecture setup
@@ -86,7 +92,7 @@ class Config:
         self.test_data_dir = testset_map.get(args.testset, [])
 
         # Model-specific setup
-        self.save_model_freq = 100  # epochs
+        self.save_model_freq = 10  # epochs
         if self.img_size == 256:
             self._setup_256(args)
         elif self.img_size == 512:
@@ -135,9 +141,10 @@ class Config:
             norm_layer=nn.LayerNorm,
             patch_norm=True,
             quant_bits=self.quant_bits,
-            use_adapter=args.encoder_adapter,
-            use_token_pruner=args.token_pruner,
-            use_channel_pruner=args.channel_pruner,
+            use_snr_adapter=self.snr_adapter,
+            use_token_pruner=self.token_pruner,
+            use_channel_pruner=self.channel_pruner,
+            module_hidden_ratio=1,
         )
 
         self.decoder_kwargs = dict(
@@ -152,9 +159,10 @@ class Config:
             qk_scale=None,
             norm_layer=nn.LayerNorm,
             patch_norm=True,
-            use_adapter=args.decoder_adapter,
-            use_token_pruner=args.token_pruner,
-            use_channel_pruner=args.channel_pruner,
+            use_snr_adapter=self.snr_adapter,
+            use_token_pruner=self.token_pruner,
+            use_channel_pruner=self.channel_pruner,
+            module_hidden_ratio=1,
         )
 
     def _setup_512(self, args):
@@ -192,9 +200,11 @@ class Config:
             qk_scale=None,
             norm_layer=nn.LayerNorm,
             patch_norm=True,
-            use_adapter=args.encoder_adapter,
-            use_token_pruner=args.token_pruner,
-            use_channel_pruner=args.channel_pruner,
+            quant_bits=self.quant_bits,
+            use_snr_adapter=self.snr_adapter,
+            use_token_pruner=self.token_pruner,
+            use_channel_pruner=self.channel_pruner,
+            module_hidden_ratio=1,
         )
         self.decoder_kwargs = dict(
             patch_size=self.patch_size,
@@ -208,7 +218,8 @@ class Config:
             qk_scale=None,
             norm_layer=nn.LayerNorm,
             patch_norm=True,
-            use_adapter=args.decoder_adapter,
-            use_token_pruner=args.token_pruner,
-            use_channel_pruner=args.channel_pruner,
+            use_snr_adapter=self.snr_adapter,
+            use_token_pruner=self.token_pruner,
+            use_channel_pruner=self.channel_pruner,
+            module_hidden_ratio=1,
         )
