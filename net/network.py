@@ -1,6 +1,6 @@
 from .decoder import create_decoder
 from .encoder import create_encoder
-from loss.image_losses import MSEWithPSNR
+from loss.image_losses import ImageLoss
 from utils.model_utils import quantize_symmetric, dequantize_symmetric
 from .channel import Channel
 from random import choice
@@ -27,7 +27,9 @@ class SwinJSCC(nn.Module):
             config.logger.info("Decoder: ")
             config.logger.info(decoder_kwargs)
         self.channel = Channel(config)
-        self.mse_loss = MSEWithPSNR(normalized=True)
+        self.mse_loss = ImageLoss(
+            config.lambda_mse, config.lambda_lpips, normalized=True, data_range=1.0
+        )
         self.ssim = SSIM(data_range=1.0)
         self.msssim = MS_SSIM(data_range=1.0)
         # feature_channels = encoder_kwargs["embed_dims"][-1]
@@ -71,19 +73,16 @@ class SwinJSCC(nn.Module):
         noisy_feature = noisy_feature * mask
         recon_images = self.decoder(noisy_feature, snr, feature_H, feature_W, valid)
         # losses
-        img_loss, mse, psnr = self.mse_loss(recon_images, input_image, valid)
-        img_loss = img_loss.mean()
-        # rescale to [0,255] loss to avoid too small loss
-        img_loss = img_loss * 255 * 255
-
+        img_loss, metrics = self.mse_loss(recon_images, input_image, valid)
         # metrics
-        mse = mse.mean()
-        psnr = psnr.mean()
+        mse = metrics["mse"].mean()
+        psnr = metrics["psnr"].mean()
+        lpips = metrics["lpips"].mean()
         ssim = self.ssim(recon_images, input_image).mean().detach()
         msssim = self.msssim(recon_images, input_image).mean().detach()
         return (
             recon_images,
             [cbr, snr],
-            [mse, psnr, ssim, msssim],
+            [mse, psnr, lpips, ssim, msssim],
             img_loss,
         )

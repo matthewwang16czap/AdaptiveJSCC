@@ -39,6 +39,9 @@ class Config:
         self.training = args.training if hasattr(args, "training") else False
         self.learning_rate = 1e-4
         self.tot_epoch = 10_000_000
+        # Loss weights
+        self.lambda_mse = 1.0
+        self.lambda_lpips = 1.0
 
         # modules enabling
         self.token_pruner = (
@@ -101,8 +104,8 @@ class Config:
 
     def _setup_256(self, args):
         self.image_dims = (3, 256, 256)
-        self.batch_size = 4
-        self.test_batch_size = 4
+        self.batch_size = 8
+        self.test_batch_size = 8
         self.downsample = 4  # number of downsampling layers in encoder
         self.patch_size = 2
         self.in_chans = 3

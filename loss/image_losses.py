@@ -60,9 +60,10 @@ class MSEWithPSNR(torch.nn.Module):
             data_range=self.data_range,
             normalized=self.normalized,
         )
-        loss = mse.mean()
         psnr = 10.0 * torch.log10((self.data_range**2) / mse.clamp_min(1e-8))
-        return loss, mse.detach(), psnr.detach()
+        # rescale to [0,255] loss to avoid too small loss
+        # mse_loss = mse.mean() * 255 * 255
+        return mse.mean(), mse.detach(), psnr.detach()
 
 
 @torch.jit.ignore
