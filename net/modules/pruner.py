@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def topk_mask(score, keep_ratio):
@@ -14,55 +15,6 @@ def topk_mask(score, keep_ratio):
     mask = torch.zeros_like(score)
     mask.scatter_(1, idx, 1.0)
     return mask
-
-
-# class CNNImportance(nn.Module):
-#     def __init__(self, in_channels, hidden_dim=64):
-#         super().__init__()
-#         self.local_feat = nn.Sequential(
-#             nn.Conv2d(in_channels, hidden_dim, 3, padding=1),
-#             nn.ReLU(inplace=True),
-#             nn.Conv2d(hidden_dim, hidden_dim, 3, padding=1),
-#         )
-#         # Global context branch
-#         self.global_pool = nn.AdaptiveAvgPool2d(1)
-#         self.global_fc = nn.Linear(in_channels, hidden_dim)
-#         self.final_conv = nn.Conv2d(hidden_dim, 1, 1)
-
-#     def forward(self, x):
-#         local_x = self.local_feat(x)  # (B, hidden, H, W)
-#         global_x = self.global_fc(self.global_pool(x).flatten(1))  # (B, hidden)
-
-#         # Combine local and global
-#         out = local_x + global_x.view(x.shape[0], -1, 1, 1)
-#         return self.final_conv(torch.relu(out))
-
-
-# class EncoderTokenPruner(nn.Module):
-#     def __init__(self, dim, hidden_ratio=0.5):
-#         super().__init__()
-#         # Using your CNN-based importance scorer
-#         self.importance_net = CNNImportance(
-#             in_channels=dim, hidden_dim=int(dim * hidden_ratio)
-#         )
-
-#     def forward(self, x, H, W, keep_ratio):
-#         B, N, C = x.shape
-#         # 1. Reshape to 2D for CNN importance scoring
-#         # (B, H*W, C) -> (B, C, H, W)
-#         feat_2d = x.transpose(1, 2).view(B, C, H, W)
-#         # 2. Generate Importance Map (B, 1, H, W)
-#         scores_2d = self.importance_net(feat_2d)
-#         scores = scores_2d.view(B, -1)  # (B, N)
-#         # 3. Generate Hard Mask (Non-differentiable part)
-#         with torch.no_grad():
-#             hard_mask = topk_mask(scores, keep_ratio)  # (B, N)
-#         # 4. Straight-Through Estimator (STE) for gradients
-#         soft_mask = torch.sigmoid(scores)
-#         mask = hard_mask + (soft_mask - soft_mask.detach())
-#         # 5. Apply Mask (B, N, 1)
-#         x = x * mask.unsqueeze(-1).contiguous()
-#         return x
 
 
 class AttentionScorer(nn.Module):
@@ -87,15 +39,9 @@ class AttentionScorer(nn.Module):
         q = self.q_proj(self.importance_query).expand(B, -1, -1)  # (B, 1, C)
         k = self.k_proj(x)  # (B, N, C)
         v = self.v_proj(x)  # (B, N, C)
-        scaling = C**-0.5
-        attn = (q @ k.transpose(-2, -1)) * scaling
-        attn_weights = attn.softmax(dim=-1)  # (B, 1, N)
-        # Global context vector based on what the Query found "important"
-        context = attn_weights @ v  # (B, 1, C)
-        # Combine local token features with global context to decide importance
-        # We add the global context to every patch feature before scoring
+        context = F.scaled_dot_product_attention(q, k, v)  # (B, 1, C)
         scores = self.mlp(res + context)
-        return scores.squeeze(-1)  # (B, N)
+        return scores.squeeze(-1)
 
 
 class EncoderTokenPruner(nn.Module):

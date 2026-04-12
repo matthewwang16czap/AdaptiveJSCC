@@ -24,9 +24,8 @@ class Config:
         self.plot_step = 10000
         self.save_filename = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.workdir = f"./history/{self.save_filename}"
-        # self.homedir = "/home/matthewwang16czap/"
-        self.homedir = "/home/ubuntu/"
-        # self.pretrained_model_path = None
+        self.homedir = "/home/matthewwang16czap/"
+        # self.homedir = "/home/ubuntu/"
         self.pretrained_model_path = "./pretrained/base3.model"
         self.log_dir = f"{self.workdir}/Log_{self.save_filename}.log"
         self.samples_dir = f"{self.workdir}/samples"
@@ -102,8 +101,8 @@ class Config:
 
     def _setup_256(self, args):
         self.image_dims = (3, 256, 256)
-        self.batch_size = 8
-        self.test_batch_size = 8
+        self.batch_size = 4
+        self.test_batch_size = 4
         self.downsample = 4  # number of downsampling layers in encoder
         self.patch_size = 2
         self.in_chans = 3

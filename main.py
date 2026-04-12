@@ -13,12 +13,14 @@ from utils.parser_utils import create_parser
 from utils.torch_utils import load_weights, save_model, seed_torch
 from utils.model_utils import freeze_model
 
-# torch.backends.cuda.enable_flash_sdp(True)
-# torch.backends.cuda.enable_mem_efficient_sdp(True)
-# torch.backends.cuda.enable_math_sdp(False)
+torch.backends.cuda.enable_flash_sdp(True)
+torch.backends.cuda.enable_mem_efficient_sdp(True)
+torch.backends.cuda.enable_math_sdp(True)
 
 
 if __name__ == "__main__":
+    print(torch.cuda.get_device_name())
+    print(torch.cuda.get_device_capability())
     # Parse args
     parser = create_parser()
     args = parser.parse_args()

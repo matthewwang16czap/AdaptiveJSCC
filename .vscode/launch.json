@@ -24,8 +24,8 @@
                 "--training",
                 "--training-modules", "token_pruner",
                 "--token-pruner",
-                // "--channel-pruner",
-                "--token-channel-balance-ratio", "0.1",
+                "--channel-pruner",
+                "--token-channel-balance-ratio", "0.2",
                 // "--snr-adapter",             
             ],
 
