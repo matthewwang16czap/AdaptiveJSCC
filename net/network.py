@@ -75,14 +75,11 @@ class SwinJSCC(nn.Module):
         # losses
         img_loss, metrics = self.mse_loss(recon_images, input_image, valid)
         # metrics
-        mse = metrics["mse"].mean()
-        psnr = metrics["psnr"].mean()
-        lpips = metrics["lpips"].mean()
-        ssim = self.ssim(recon_images, input_image).mean().detach()
-        msssim = self.msssim(recon_images, input_image).mean().detach()
+        metrics["ssim"] = self.ssim(recon_images, input_image).mean().detach()
+        metrics["msssim"] = self.msssim(recon_images, input_image).mean().detach()
         return (
             recon_images,
             [cbr, snr],
-            [mse, psnr, lpips, ssim, msssim],
+            metrics,
             img_loss,
         )

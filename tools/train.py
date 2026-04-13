@@ -4,7 +4,7 @@ import torch
 import time
 
 
-def train_one_epoch(
+def train_one_step(
     epoch,
     global_step,
     net,
@@ -17,17 +17,6 @@ def train_one_epoch(
     is_ddp = hasattr(net, "module")
     net.train()
     optimizer.zero_grad(set_to_none=True)
-    # Initialize metrics
-    metrics_names = [
-        "elapsed",
-        "losses",
-        "psnrs",
-        "ssims",
-        "msssims",
-        "cbrs",
-        "snrs",
-    ]
-    metrics = {name: AverageMeter() for name in metrics_names}
     # train batch data
     for batch_idx, data in enumerate(train_loader):
         start_time = time.time()
@@ -40,7 +29,7 @@ def train_one_epoch(
             (
                 recon_images,
                 [cbr, snr],
-                [mse, psnr, ssim, msssim],
+                metrics,
                 img_loss,
             ) = net(input, valid)
             img_loss = img_loss / config.accum_steps
@@ -63,13 +52,13 @@ def train_one_epoch(
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
         # Update metrics
-        metrics["elapsed"].update(time.time() - start_time)
-        metrics["losses"].update(img_loss.item())
-        metrics["cbrs"].update(cbr.item())
-        metrics["snrs"].update(snr.item())
-        metrics["psnrs"].update(psnr.item())
-        metrics["ssims"].update(ssim.item())
-        metrics["msssims"].update(msssim.item())
+        metrics = {
+            "elapsed": time.time() - start_time,
+            "loss": img_loss.item(),
+            "snr": snr.item(),
+            "cbr": cbr.item(),
+            **metrics,
+        }
         # Logging
         if global_step % config.print_step == 0:
             process = (
@@ -77,20 +66,22 @@ def train_one_epoch(
                 / (train_loader.__len__())
                 * 100.0
             )
-            log_components = [
+            line1 = [
                 f"Epoch {epoch + 1}",
                 f"Step [{batch_idx + 1}/{len(train_loader)}={process:.2f}%]",
-                f"Time {metrics['elapsed'].val:.3f}",
-                f"Loss {metrics['losses'].val:.2e}",
-                f"SNR {metrics['snrs'].val:.1f}",
-                f"CBR {metrics['cbrs'].val:.4f}",
-                f"PSNR {metrics['psnrs'].val:.3f}",
-                f"SSIM {metrics['ssims'].val:.3f}",
-                f"MSSSIM {metrics['msssims'].val:.3f}",
+                f"Time {metrics['elapsed']:.3f}",
                 f"Lr {config.learning_rate}",
             ]
-            logger.info(" | ".join(log_components))
-            # Reset metrics after logging
-            for metric in metrics.values():
-                metric.clear()
+            line2 = [
+                f"Loss {metrics['loss']:>10.2e}",
+                f"SNR  {metrics['snr']:>10.2f}",
+                f"CBR  {metrics['cbr']:>10.2f}",
+                f"PSNR {metrics['psnr']:>10.2f}",
+                f"MSE  {metrics['mse']:>10.2e}",
+                f"LPIPS {metrics['lpips']:>10.2e}",
+                f"SSIM {metrics['ssim']:>10.2e}",
+                f"MSSSIM {metrics['msssim']:>10.2e}",
+            ]
+            logger.info(" | ".join(line1))
+            logger.info(" | ".join(line2))
     return global_step

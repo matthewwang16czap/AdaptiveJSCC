@@ -182,5 +182,5 @@ class ImageLoss(torch.nn.Module):
             self.lpips_loss(X, Y, mask) if self.lpips_loss is not None else (0, 0)
         )
         loss = self.lambda_mse * mse_loss + self.lambda_lpips * lpips_loss
-        metrics = {"mse": mse, "psnr": psnr, "lpips": lpips_val}
+        metrics = {"mse": mse.mean(), "psnr": psnr.mean(), "lpips": lpips_val.mean()}
         return loss, metrics

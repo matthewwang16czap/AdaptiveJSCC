@@ -104,8 +104,8 @@ class Config:
 
     def _setup_256(self, args):
         self.image_dims = (3, 256, 256)
-        self.batch_size = 8
-        self.test_batch_size = 8
+        self.batch_size = 4
+        self.test_batch_size = 4
         self.downsample = 4  # number of downsampling layers in encoder
         self.patch_size = 2
         self.in_chans = 3

@@ -21,7 +21,7 @@
                 "--model-size", "base",
                 "--img-size", "256",
                 "--amp",
-                "--training",
+                // "--training",
                 "--training-modules", "token_pruner",
                 "--token-pruner",
                 "--channel-pruner",

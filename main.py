@@ -6,7 +6,7 @@ from net.network import SwinJSCC
 from data.datasets import get_loader
 from configs.config import Config
 from tools.test import test
-from tools.train import train_one_epoch
+from tools.train import train_one_step
 from utils.ddp_utils import cleanup_ddp, initialize_ddp
 from utils.logger_utils import logger_configuration
 from utils.parser_utils import create_parser
@@ -85,7 +85,7 @@ if __name__ == "__main__":
                 train_sampler.set_epoch(epoch)
             if test_sampler is not None:
                 test_sampler.set_epoch(epoch)
-            global_step = train_one_epoch(
+            global_step = train_one_step(
                 epoch,
                 global_step,
                 net,

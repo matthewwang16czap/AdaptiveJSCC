@@ -12,11 +12,11 @@ def test(net, test_loader, logger, config):
     rank = dist.get_rank() if dist.is_initialized() else 0
     world_size = dist.get_world_size() if dist.is_initialized() else 1
     metric_names = [
+        "mse",
+        "lpips",
         "psnr",
         "ssim",
         "msssim",
-        "snr",
-        "cbr",
     ]
     results = []
     for snr in config.snrs:
@@ -34,7 +34,7 @@ def test(net, test_loader, logger, config):
                     (
                         recon_images,
                         [_, _],
-                        [mse, psnr, ssim, msssim],
+                        model_metrics,
                         img_loss,
                     ) = net(input, valid, snr, cbr)
                     # for visualization
@@ -47,9 +47,9 @@ def test(net, test_loader, logger, config):
                         torchvision.utils.save_image(recon_images[0], save_path)
                     # Update batch data to metrics
                     batch_size = input.size(0)
-                    metrics["psnr"] += psnr.item() * batch_size
-                    metrics["ssim"] += ssim.item() * batch_size
-                    metrics["msssim"] += msssim.item() * batch_size
+                    for k, v in model_metrics.items():
+                        if k in metrics:
+                            metrics[k] += v * batch_size
                     counts += batch_size
             # DDP reduce
             for key in metrics:
@@ -58,32 +58,28 @@ def test(net, test_loader, logger, config):
                     dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
                 metrics[key] = (tensor / (counts * world_size)).item()
             # Store result
-            results.append(
-                {
-                    "snr": snr,
-                    "cbr": cbr,
-                    "psnr": metrics["psnr"],
-                    "ssim": metrics["ssim"],
-                    "msssim": metrics["msssim"],
-                }
-            )
+            results.append({"snr": snr, "cbr": cbr, **metrics})
     # logging
     if rank == 0 and logger is not None:
         logger.info("Start Test:")
         logger.info(
-            f"{'SNR':>8}"
-            f"{'CBR':>12}"
+            f"{'SNR':>10}"
+            f"{'CBR':>10}"
             f"{'PSNR':>10}"
+            f"{'MSE':>10}"
+            f"{'LPIPS':>10}"
             f"{'SSIM':>10}"
             f"{'MS-SSIM':>10}"
         )
         for r in results:
             logger.info(
-                f"{r['snr']:>8.2f}"
-                f"{r['cbr']:>12.4f}"
-                f"{r['psnr']:>10.3f}"
-                f"{r['ssim']:>10.3f}"
-                f"{r['msssim']:>10.3f}"
+                f"{r['snr']:>10.2f}"
+                f"{r['cbr']:>10.2f}"
+                f"{r['psnr']:>10.2f}"
+                f"{r['mse']:>10.2e}"
+                f"{r['lpips']:>10.2e}"
+                f"{r['ssim']:>10.2e}"
+                f"{r['msssim']:>10.2e}"
             )
         logger.info("Finish Test!")
         with open(get_path(get_logger_dir(logger), "test_results.json"), "w") as f:
