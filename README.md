@@ -1,1 +1,1 @@
-# DenoiseSwinJSCC: Swin Transformer for Joint Source-Channel Coding with denoiser
+# Swin Transformer for Joint Source-Channel Coding with snr and channel adapters
